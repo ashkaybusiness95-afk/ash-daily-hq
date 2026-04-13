@@ -2,19 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="theme-color" content="#0a0a0a">
   <title>Ash Daily HQ</title>
-  <link rel="manifest" href="data:application/json,{%22name%22:%22Ash%20Daily%20HQ%22,%22short_name%22:%22Daily%20HQ%22,%22start_url%22:%22.%22,%22display%22:%22standalone%22,%22background_color%22:%22%230a0a0a%22,%22theme_color%22:%22%230F6E56%22}">
-  <style>
-    *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:'DM Sans',system-ui,-apple-system,sans-serif;background:#f8f8f6;color:#1a1a1a;-webkit-tap-highlight-color:transparent}
-    input,select,button,textarea{font-family:inherit}
-    @media(prefers-color-scheme:dark){body{background:#0a0a0a;color:#e5e5e5}}
-  </style>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>*{box-sizing:border-box;margin:0;padding:0}body{background:#f1f5f9}</style>
 </head>
 <body>
   <div id="root"></div>
@@ -36,45 +28,56 @@ firebase.initializeApp({
 });
 const db = firebase.firestore();
 const PASS = "AshHQ2026";
-const PROP_APP = ""; // Put your property app URL here
+const PROP_APP = "";
 const AUTH_KEY = "ash-hq-auth";
 
 /* ═══ Helpers ═══ */
-const N=new Date(),TD=N.toISOString().split("T")[0],DN=N.getDate(),MI=N.getMonth(),YR=N.getFullYear();
-const DAYS_F=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-const DAYS_S=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-const MO=["January","February","March","April","May","June","July","August","September","October","November","December"];
-const MK=YR+"-"+String(MI+1).padStart(2,"0");
-const greet=()=>{const h=N.getHours();return h<12?"Morning":h<17?"Afternoon":"Evening";};
-const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-const gbp=n=>"£"+Math.round(Math.abs(n)).toLocaleString();
-const ago=ds=>Math.floor((N-new Date(ds))/864e5);
-const fdt=ds=>{const d=new Date(ds);return d.getDate()+" "+MO[d.getMonth()].slice(0,3);};
-const isDark=window.matchMedia&&window.matchMedia("(prefers-color-scheme:dark)").matches;
+const now = new Date();
+const TD = now.toISOString().split("T")[0];
+const DN = now.getDate();
+const MI = now.getMonth();
+const YR = now.getFullYear();
+const MK = YR + "-" + String(MI+1).padStart(2,"0");
+const DAYS_F = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+const DAYS_S = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const MO = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const greetWord = now.getHours() < 12 ? "morning" : now.getHours() < 17 ? "afternoon" : "evening";
+const uid = function(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); };
+const gbp = function(n){ return "£" + Math.round(Math.abs(n||0)).toLocaleString(); };
+const ago = function(ds){ return Math.floor((now - new Date(ds)) / 86400000); };
+const fmtD = function(ds){ if(!ds) return ""; var d = new Date(ds); return d.getDate() + " " + MO[d.getMonth()].slice(0,3); };
 
 function weekDates(){
-  const d=new Date(N),day=d.getDay(),mon=new Date(d);
-  mon.setDate(d.getDate()-((day+6)%7));
-  return Array.from({length:7},(_,i)=>{const dd=new Date(mon);dd.setDate(mon.getDate()+i);return dd.toISOString().split("T")[0];});
+  var d = new Date(now), day = d.getDay();
+  var mon = new Date(d); mon.setDate(d.getDate() - ((day+6)%7));
+  var arr = [];
+  for(var i=0;i<7;i++){var dd=new Date(mon);dd.setDate(mon.getDate()+i);arr.push(dd.toISOString().split("T")[0]);}
+  return arr;
 }
-const WK=weekDates();
+var WK = weekDates();
+
+function calUrl(text, date){
+  var d = date || TD;
+  var start = d.replace(/-/g,"");
+  return "https://www.google.com/calendar/render?action=TEMPLATE&text="+encodeURIComponent(text)+"&dates="+start+"/"+start+"&details="+encodeURIComponent("Added from Ash Daily HQ");
+}
 
 /* ═══ Config ═══ */
-const ACTS=[
-  {key:"steps",label:"10k steps",icon:"🚶",color:"#0F6E56",bg:isDark?"#0F3D2E":"#E1F5EE"},
-  {key:"gym",label:"Gym / Boxing",icon:"🥊",color:isDark?"#D85A30":"#993C1D",bg:isDark?"#3D1A0A":"#FAECE7"},
-  {key:"read",label:"Read",icon:"📖",color:isDark?"#7F77DD":"#534AB7",bg:isDark?"#1F1B3D":"#EEEDFE"},
-  {key:"bike",label:"30 min bike",icon:"🚴",color:isDark?"#378ADD":"#185FA5",bg:isDark?"#0C2440":"#E6F1FB"},
+var ACTS = [
+  {key:"steps",label:"10k steps",icon:"🚶"},
+  {key:"gym",label:"Gym / Boxing",icon:"🥊"},
+  {key:"read",label:"Read",icon:"📖"},
+  {key:"bike",label:"30 min bike",icon:"🚴"},
 ];
 
-const CATS=[
-  {key:"property",label:"Property",icon:"🏠",c:"#0F6E56",bg:isDark?"#0F3D2E":"#E1F5EE",dk:isDark?"#5DCAA5":"#085041"},
-  {key:"photo",label:"Photo",icon:"📷",c:isDark?"#7F77DD":"#534AB7",bg:isDark?"#1F1B3D":"#EEEDFE",dk:isDark?"#AFA9EC":"#3C3489"},
-  {key:"fitness",label:"Fitness",icon:"🥊",c:isDark?"#D85A30":"#993C1D",bg:isDark?"#3D1A0A":"#FAECE7",dk:isDark?"#F0997B":"#712B13"},
-  {key:"personal",label:"Personal",icon:"👤",c:isDark?"#378ADD":"#185FA5",bg:isDark?"#0C2440":"#E6F1FB",dk:isDark?"#85B7EB":"#0C447C"},
+var CATS = [
+  {key:"property",label:"Property",icon:"🏠"},
+  {key:"photo",label:"Photo",icon:"📷"},
+  {key:"fitness",label:"Fitness",icon:"🥊"},
+  {key:"personal",label:"Personal",icon:"👤"},
 ];
 
-const TMPLS=[
+var TMPLS = [
   {text:"Check all rent payments",cat:"property"},
   {text:"Chase late rent",cat:"property"},
   {text:"Review compliance dates",cat:"property"},
@@ -83,591 +86,869 @@ const TMPLS=[
   {text:"Follow up enquiries",cat:"photo"},
   {text:"Update website",cat:"photo"},
   {text:"Review finances",cat:"personal"},
+  {text:"Weigh in",cat:"fitness"},
 ];
 
-const TABS=[
-  {key:"today",label:"Today",icon:"☀"},
-  {key:"tasks",label:"Tasks",icon:"✓"},
-  {key:"activity",label:"Activity",icon:"🏃"},
-  {key:"photo",label:"Photo",icon:"📷"},
-  {key:"review",label:"Review",icon:"📊"},
+var TABS = [
+  {key:"today",label:"Today"},
+  {key:"tasks",label:"Tasks & Goals"},
+  {key:"activity",label:"Activity"},
+  {key:"photo",label:"Photo Biz"},
+  {key:"review",label:"Review"},
 ];
 
 /* ═══ Theme ═══ */
-const bg1=isDark?"#141414":"#fff";
-const bg2=isDark?"#1c1c1c":"#f5f5f3";
-const bg3=isDark?"#0a0a0a":"#f8f8f6";
-const bdr=isDark?"rgba(255,255,255,0.08)":"#e5e5e5";
-const bdr2=isDark?"rgba(255,255,255,0.04)":"#f0f0f0";
-const txt1=isDark?"#e5e5e5":"#1a1a1a";
-const txt2=isDark?"#888":"#888";
-const txt3=isDark?"#555":"#bbb";
-const red="#E24B4A";const green="#0F6E56";
-
-/* ═══ Styles ═══ */
-const cd={background:bg1,border:`0.5px solid ${bdr}`,borderRadius:16,overflow:"hidden",marginBottom:12};
-const ch={padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:`0.5px solid ${bdr}`};
-const ctt={fontSize:15,fontWeight:600,color:txt1};
-const css={fontSize:12,color:txt2,marginTop:2};
-const pl=(bg,c)=>({display:"inline-block",fontSize:11,fontWeight:600,color:c,background:bg,padding:"3px 10px",borderRadius:20});
-const bt=(bg,c)=>({padding:"8px 16px",borderRadius:10,border:"none",cursor:"pointer",background:bg,color:c,fontSize:13,fontWeight:600,fontFamily:"inherit"});
-const rw={padding:"12px 16px",display:"flex",gap:10,alignItems:"center",borderBottom:`0.5px solid ${bdr2}`};
-const ip={width:"100%",padding:"11px 14px",borderRadius:12,border:`0.5px solid ${bdr}`,fontSize:13,fontFamily:"inherit",outline:"none",marginBottom:8,boxSizing:"border-box",background:bg1,color:txt1};
-
-/* ═══ Firebase helpers ═══ */
-const DOC=db.collection("dailyhq").doc("ash");
-
-async function loadData(){
-  try{const snap=await DOC.get();return snap.exists?snap.data():null;}catch(e){console.error(e);return null;}
+function getColors(dark){
+  return {
+    dark:"#1e293b", mid:"#475569", gray:"#94a3b8", light:"#f1f5f9",
+    green:"#16a34a", red:"#dc2626", amber:"#d97706", blue:"#2563eb",
+    gbg: dark?"#052e16":"#dcfce7", gtx: dark?"#4ade80":"#15803d",
+    rbg: dark?"#450a0a":"#fee2e2", rtx: dark?"#f87171":"#b91c1c",
+    abg: dark?"#451a03":"#fef3c7", atx: dark?"#fbbf24":"#b45309",
+    bbg: dark?"#1e3a5f":"#dbeafe", btx: dark?"#60a5fa":"#1d4ed8",
+    bg: dark?"#0f172a":"#f1f5f9",
+    cardBg: dark?"#1e293b":"#fff",
+    cardBdr: dark?"#334155":"#e2e8f0",
+    txt: dark?"#e2e8f0":"#1e293b",
+    txt2: dark?"#94a3b8":"#64748b",
+    txt3: dark?"#475569":"#94a3b8",
+    inputBg: dark?"#0f172a":"#fff",
+    inputBdr: dark?"#334155":"#e2e8f0",
+  };
 }
 
-async function saveData(data){
-  try{await DOC.set(data,{merge:true});}catch(e){console.error(e);}
+function catColors(key, S){
+  var map = {
+    property:{bg:S.gbg,c:S.gtx},
+    photo:{bg:S.bbg,c:S.btx},
+    fitness:{bg:S.rbg,c:S.rtx},
+    personal:{bg:S.abg,c:S.atx},
+  };
+  return map[key] || map.personal;
 }
 
 /* ═══ Voice ═══ */
-function speak(text){
-  if(!window.speechSynthesis)return;
+function speakText(text){
+  if(!window.speechSynthesis) return;
   window.speechSynthesis.cancel();
-  const u=new SpeechSynthesisUtterance(text.replace(/[☀📰📋🏠🥊📷⚠💪🚶📖🚴🏃]/g,"").replace(/\n+/g,". "));
-  u.lang="en-GB";u.rate=1;
+  // Strip ALL emoji, symbols, special chars
+  var clean = text.replace(/[\u{1F000}-\u{1FFFF}]/gu, "")
+    .replace(/[\u{2600}-\u{27BF}]/gu, "")
+    .replace(/[\u{FE00}-\u{FEFF}]/gu, "")
+    .replace(/[☀📰📋🏠🥊📷⚠💪🚶📖🚴🏃🥗💧✓✗→←►▶■□●○★☆♦♣♠♥✦✧⬆⬇⬅➡↑↓←→]/g, "")
+    .replace(/[^\x20-\x7E\n]/g, " ")
+    .replace(/\n{2,}/g, ". ")
+    .replace(/\n/g, ". ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  var u = new SpeechSynthesisUtterance(clean);
+  u.lang = "en-GB";
+  u.rate = 0.95;
+  u.pitch = 1;
+  // Try to pick a British voice
+  var voices = window.speechSynthesis.getVoices();
+  var brit = voices.find(function(v){return v.lang==="en-GB";});
+  if(brit) u.voice = brit;
   window.speechSynthesis.speak(u);
 }
 
-/* ═══ AI Call ═══ */
-async function callAI(apiKey, system, prompt){
-  const r=await fetch("https://api.anthropic.com/v1/messages",{
+/* ═══ AI ═══ */
+function callAI(apiKey, system, prompt, callback){
+  fetch("https://api.anthropic.com/v1/messages",{
     method:"POST",
     headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
     body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:800,system:system,messages:[{role:"user",content:prompt}]})
-  });
-  const d=await r.json();
-  return d.content?d.content.map(c=>c.text||"").join(""):"Error — check your API key.";
+  }).then(function(r){return r.json();}).then(function(d){
+    var txt = d.content ? d.content.map(function(c){return c.text||"";}).join("") : "Error. Check your API key at console.anthropic.com";
+    callback(txt);
+  }).catch(function(){callback("Connection error. Check your internet and API key.");});
 }
 
-/* ═══════════════ MAIN APP ═══════════════ */
-function App(){
-  const[auth,setAuth]=useState(()=>localStorage.getItem(AUTH_KEY)==="true");
-  const[pw,setPw]=useState("");
+/* ═══ Components ═══ */
+function Badge(props){
+  return React.createElement("span",{style:{display:"inline-flex",alignItems:"center",padding:"3px 8px",borderRadius:99,fontSize:11,fontWeight:600,background:props.bg||"#f1f5f9",color:props.color||"#64748b"}},props.children);
+}
 
-  if(!auth)return(
-    <div style={{maxWidth:400,margin:"0 auto",padding:"80px 24px",textAlign:"center"}}>
-      <div style={{fontSize:32,marginBottom:8}}>🔒</div>
-      <div style={{fontSize:22,fontFamily:"'Playfair Display',serif",color:txt1,marginBottom:4}}>Ash's Daily HQ</div>
-      <div style={{fontSize:13,color:txt2,marginBottom:24}}>Enter password to continue</div>
-      <input value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&pw===PASS){localStorage.setItem(AUTH_KEY,"true");setAuth(true);}}} type="password" placeholder="Password" style={{...ip,textAlign:"center",fontSize:16,maxWidth:240,margin:"0 auto"}}/>
-      <button onClick={()=>{if(pw===PASS){localStorage.setItem(AUTH_KEY,"true");setAuth(true);}}} style={{...bt(green,"#fff"),padding:"12px 40px",marginTop:8}}>Enter</button>
-    </div>
+function Btn(props){
+  var S = props.S || getColors(false);
+  return React.createElement("button",{onClick:props.onClick,disabled:props.disabled,style:Object.assign({display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:13,borderRadius:13,fontSize:14,fontWeight:600,border:"none",cursor:"pointer",width:"100%",marginBottom:10,background:S.dark,color:"#fff",fontFamily:"system-ui"},props.style||{})},props.children);
+}
+
+function Inp(props){
+  var S = props.S || getColors(false);
+  var rest = Object.assign({},props);
+  delete rest.S;
+  delete rest.style;
+  return React.createElement("input",Object.assign({},rest,{style:Object.assign({width:"100%",border:"1px solid "+S.inputBdr,borderRadius:10,padding:"10px 12px",fontSize:14,fontFamily:"system-ui",background:S.inputBg,color:S.txt,outline:"none",marginBottom:8,display:"block"},props.style||{})}));
+}
+
+function Sel(props){
+  var S = props.S || getColors(false);
+  var rest = Object.assign({},props);
+  delete rest.S; delete rest.style; delete rest.children;
+  return React.createElement("select",Object.assign({},rest,{style:Object.assign({width:"100%",border:"1px solid "+S.inputBdr,borderRadius:10,padding:"10px 12px",fontSize:14,fontFamily:"system-ui",background:S.inputBg,color:S.txt,outline:"none",marginBottom:8,display:"block"},props.style||{})}),props.children);
+}
+
+/* ═══ Login ═══ */
+function LoginScreen(props){
+  var _s = useState(""), pw = _s[0], setPw = _s[1];
+  var _e = useState(false), err = _e[0], setErr = _e[1];
+  var attempt = function(){
+    if(pw===PASS){localStorage.setItem(AUTH_KEY,String(Date.now()));props.onLogin();}
+    else{setErr(true);setPw("");}
+  };
+  return React.createElement("div",{style:{minHeight:"100vh",background:"#1e293b",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:32}},
+    React.createElement("div",{style:{fontSize:52}},"☀️"),
+    React.createElement("div",{style:{color:"#fff",fontSize:22,fontWeight:700,margin:"16px 0 4px"}},"Daily HQ"),
+    React.createElement("div",{style:{color:"#94a3b8",fontSize:13,marginBottom:28}},"Enter your password to continue"),
+    React.createElement("input",{type:"password",value:pw,placeholder:"Password",onChange:function(e){setPw(e.target.value);setErr(false);},onKeyDown:function(e){if(e.key==="Enter")attempt();},style:{width:"100%",maxWidth:300,padding:"14px 16px",borderRadius:12,border:"1.5px solid #334155",background:"#0f172a",color:"#fff",fontSize:16,marginBottom:12,outline:"none",fontFamily:"system-ui"}}),
+    React.createElement("button",{onClick:attempt,style:{width:"100%",maxWidth:300,padding:14,borderRadius:12,background:"#16a34a",color:"#fff",fontSize:15,fontWeight:600,border:"none",cursor:"pointer",fontFamily:"system-ui"}},"Log In"),
+    err && React.createElement("div",{style:{color:"#f87171",fontSize:13,marginTop:10}},"Incorrect password.")
   );
+}
 
-  return <HQ/>;
+/* ═══ MAIN APP ═══ */
+function App(){
+  var _l = useState(function(){try{var t=localStorage.getItem(AUTH_KEY);return t&&(Date.now()-parseInt(t))<86400000;}catch(e){return false;}}),
+    loggedIn = _l[0], setLoggedIn = _l[1];
+  if(!loggedIn) return React.createElement(LoginScreen,{onLogin:function(){setLoggedIn(true);}});
+  return React.createElement(HQ,null);
 }
 
 function HQ(){
-  const[tab,setTab]=useState("today");
-  const[ok,setOk]=useState(false);
+  var _dm = useState(function(){try{return localStorage.getItem("ash-hq-dm")==="1";}catch(e){return false;}}),
+    dm = _dm[0], setDm = _dm[1];
+  var S = getColors(dm);
+
+  var _tab = useState("today"), tab = _tab[0], setTab = _tab[1];
+  var _ok = useState(false), ok = _ok[0], setOk = _ok[1];
 
   // Data
-  const[tasks,setTasks]=useState([]);
-  const[acts,setActs]=useState({});
-  const[notes,setNotes]=useState({});
-  const[photos,setPhotos]=useState([]);
-  const[body,setBody]=useState([]);
-  const[goals,setGoals]=useState([]);
-  const[apiKey,setApiKey]=useState(()=>localStorage.getItem("ash-hq-apikey")||"");
+  var _d = useState(null), data = _d[0], setData = _d[1];
 
-  // UI
-  const[brief,setBrief]=useState(null);
-  const[bLoad,setBLoad]=useState(false);
-  const[spk,setSpk]=useState(false);
-  const[add,setAdd]=useState(false);
-  const[form,setForm]=useState({text:"",cat:"property",due:TD,pri:"normal"});
-  const[flt,setFlt]=useState("all");
-  const[vm,setVm]=useState("today");
-  const[addP,setAddP]=useState(false);
-  const[pf,setPf]=useState({client:"",date:TD,location:"",status:"enquiry",revenue:""});
-  const[addB,setAddB]=useState(false);
-  const[bf,setBf]=useState({weight:""});
-  const[addG,setAddG]=useState(false);
-  const[gf,setGf]=useState({text:"",target:"",current:""});
-  const[tmpls,setTmpls]=useState(false);
-  const[noteEdit,setNoteEdit]=useState(false);
-  const[noteText,setNoteText]=useState("");
-  const[showKey,setShowKey]=useState(false);
-  const[keyInput,setKeyInput]=useState("");
-  const[aiResult,setAiResult]=useState("");
-  const[aiLoad,setAiLoad]=useState(false);
+  // UI states
+  var _brief = useState(null), brief = _brief[0], setBrief = _brief[1];
+  var _bLoad = useState(false), bLoad = _bLoad[0], setBLoad = _bLoad[1];
+  var _spk = useState(false), spk = _spk[0], setSpk = _spk[1];
+  var _add = useState(false), addMode = _add[0], setAddMode = _add[1];
+  var _form = useState({text:"",cat:"property",due:TD,pri:"normal"}), form = _form[0], setForm = _form[1];
+  var _flt = useState("all"), flt = _flt[0], setFlt = _flt[1];
+  var _vm = useState("today"), vm = _vm[0], setVm = _vm[1];
+  var _edit = useState(null), editId = _edit[0], setEditId = _edit[1];
+  var _ef = useState({}), editForm = _ef[0], setEditForm = _ef[1];
+  var _addP = useState(false), addP = _addP[0], setAddP = _addP[1];
+  var _pf = useState({client:"",date:TD,location:"",status:"enquiry",revenue:""}), pf = _pf[0], setPf = _pf[1];
+  var _addB = useState(false), addB = _addB[0], setAddB = _addB[1];
+  var _bf = useState({weight:""}), bf = _bf[0], setBf = _bf[1];
+  var _addG = useState(false), addG = _addG[0], setAddG = _addG[1];
+  var _gf = useState({text:"",deadline:"",status:"In progress"}), gf = _gf[0], setGf = _gf[1];
+  var _tmpls = useState(false), showTmpls = _tmpls[0], setShowTmpls = _tmpls[1];
+  var _noteEdit = useState(false), noteEdit = _noteEdit[0], setNoteEdit = _noteEdit[1];
+  var _noteText = useState(""), noteText = _noteText[0], setNoteText = _noteText[1];
+  var _apiKey = useState(function(){return localStorage.getItem("ash-hq-apikey")||"";}), apiKey = _apiKey[0], setApiKey = _apiKey[1];
+  var _showKey = useState(false), showKey = _showKey[0], setShowKey = _showKey[1];
+  var _keyInp = useState(""), keyInp = _keyInp[0], setKeyInp = _keyInp[1];
+  var _aiRes = useState(""), aiRes = _aiRes[0], setAiRes = _aiRes[1];
+  var _aiLoad = useState(false), aiLoad = _aiLoad[0], setAiLoad = _aiLoad[1];
+
+  var stRef = useRef(null);
+
+  // Default data shape
+  var SEED = {tasks:[],acts:{},notes:{},photos:[],body:[],goals:[]};
 
   // Load from Firebase
-  useEffect(()=>{
-    loadData().then(d=>{
-      if(d){
-        d.tasks&&setTasks(d.tasks);
-        d.acts&&setActs(d.acts);
-        d.notes&&setNotes(d.notes);
-        d.photos&&setPhotos(d.photos);
-        d.body&&setBody(d.body);
-        d.goals&&setGoals(d.goals);
-      }
+  useEffect(function(){
+    db.collection("dailyhq").doc("ash").get().then(function(doc){
+      var d = doc.exists ? doc.data() : JSON.parse(JSON.stringify(SEED));
+      if(!d.tasks) d.tasks = [];
+      if(!d.acts) d.acts = {};
+      if(!d.notes) d.notes = {};
+      if(!d.photos) d.photos = [];
+      if(!d.body) d.body = [];
+      if(!d.goals) d.goals = [];
+      setData(d);
       setOk(true);
-    });
+    }).catch(function(){setData(JSON.parse(JSON.stringify(SEED)));setOk(true);});
   },[]);
 
-  // Save to Firebase
-  useEffect(()=>{
-    if(ok)saveData({tasks,acts,notes,photos,body,goals});
-  },[tasks,acts,notes,photos,body,goals,ok]);
+  // Debounced save to Firebase
+  useEffect(function(){
+    if(!data || !ok) return;
+    if(stRef.current) clearTimeout(stRef.current);
+    stRef.current = setTimeout(function(){
+      db.collection("dailyhq").doc("ash").set(JSON.parse(JSON.stringify(data))).catch(function(){});
+    },1500);
+  },[data]);
 
-  useEffect(()=>()=>{window.speechSynthesis&&window.speechSynthesis.cancel();},[]);
+  // Dark mode body
+  useEffect(function(){document.body.style.background = dm ? "#0f172a" : "#f1f5f9";},[dm]);
 
-  /* ─ Activity ─ */
-  const tglAct=(k,d)=>{const key=k+"-"+(d||TD);setActs(p=>{const n={...p};n[key]?delete n[key]:n[key]=true;return n;});};
-  const isAct=(k,d)=>!!acts[k+"-"+(d||TD)];
-  const todayActs=ACTS.filter(a=>isAct(a.key));
+  // Cleanup speech
+  useEffect(function(){return function(){if(window.speechSynthesis)window.speechSynthesis.cancel();};},[]);
 
-  /* ─ Tasks ─ */
-  const todayTasks=tasks.filter(t=>t.due===TD&&!t.done);
-  const overdueTasks=tasks.filter(t=>t.due<TD&&!t.done);
-  const allToday=[...overdueTasks,...todayTasks];
-  const overdueC=overdueTasks.length;
-  const doAdd=()=>{if(!form.text.trim())return;setTasks(p=>[{id:uid(),text:form.text.trim(),cat:form.cat,due:form.due,pri:form.pri,done:false,created:TD},...p]);setForm({text:"",cat:"property",due:TD,pri:"normal"});setAdd(false);};
-  const getCat=k=>CATS.find(c=>c.key===k)||CATS[0];
-  const filtTasks=tasks.filter(t=>{if(vm==="today")return t.due===TD;if(vm==="upcoming")return t.due>TD&&!t.done;if(vm==="overdue")return t.due<TD&&!t.done;if(vm==="done")return t.done;return true;}).filter(t=>flt==="all"||t.cat===flt);
+  if(!data) return React.createElement("div",{style:{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100vh",background:"#1e293b"}},
+    React.createElement("div",{style:{fontSize:40}},"☀️"),
+    React.createElement("div",{style:{color:"#fff",fontWeight:700,marginTop:12}},"Loading...")
+  );
 
-  /* ─ Photos ─ */
-  const stale=photos.filter(j=>j.status==="enquiry"&&ago(j.created||j.date)>=3);
-  const moRev=photos.filter(j=>j.status==="completed"&&j.date&&j.date.startsWith(MK)).reduce((s,j)=>s+(parseFloat(j.revenue)||0),0);
+  // ─ Update helper ─
+  var upd = function(fn){setData(function(p){return Object.assign({},p,fn(p));});};
 
-  /* ─ Week ─ */
-  const wkData=WK.map(d=>{const dt=new Date(d);return{date:d,day:DAYS_S[dt.getDay()],num:dt.getDate(),done:ACTS.filter(a=>isAct(a.key,d)),note:notes[d]||"",today:d===TD,future:d>TD};});
-  const wkRate=Math.round((wkData.reduce((s,d)=>s+d.done.length,0)/(ACTS.length*7))*100);
+  var tasks = data.tasks;
+  var acts = data.acts;
+  var notes = data.notes;
+  var photos = data.photos;
+  var body = data.body;
+  var goals = data.goals;
 
-  /* ─ Review ─ */
-  const lwT=tasks.filter(t=>{const d=(N-new Date(t.due))/864e5;return d>=0&&d<7;});
-  const doneW=lwT.filter(t=>t.done).length;
-  const missW=lwT.filter(t=>!t.done&&t.due<TD).length;
+  // ─ Activity helpers ─
+  var tglAct = function(key,date){
+    var k = key+"-"+(date||TD);
+    upd(function(d){var n=Object.assign({},d.acts);if(n[k])delete n[k];else n[k]=true;return{acts:n};});
+  };
+  var isAct = function(key,date){return !!(data.acts[key+"-"+(date||TD)]);};
+  var todayActs = ACTS.filter(function(a){return isAct(a.key);});
 
-  /* ─ Voice ─ */
-  const doSpk=()=>{
+  // ─ Task helpers ─
+  var todayTasks = tasks.filter(function(t){return t.due===TD && !t.done;});
+  var overdueTasks = tasks.filter(function(t){return t.due<TD && !t.done;});
+  var allToday = overdueTasks.concat(todayTasks);
+  var overdueC = overdueTasks.length;
+
+  var addTask = function(){
+    if(!form.text.trim()) return;
+    upd(function(d){return{tasks:[{id:uid(),text:form.text.trim(),cat:form.cat,due:form.due,pri:form.pri,done:false,created:TD}].concat(d.tasks)};});
+    setForm({text:"",cat:"property",due:TD,pri:"normal"});
+    setAddMode(false);
+  };
+
+  var toggleTask = function(id){upd(function(d){return{tasks:d.tasks.map(function(t){return t.id===id?Object.assign({},t,{done:!t.done}):t;})};});};
+  var deleteTask = function(id){upd(function(d){return{tasks:d.tasks.filter(function(t){return t.id!==id;})};});};
+  var saveEdit = function(id){
+    if(!editForm.text || !editForm.text.trim()) return;
+    upd(function(d){return{tasks:d.tasks.map(function(t){return t.id===id?Object.assign({},t,editForm):t;})};});
+    setEditId(null);
+    setEditForm({});
+  };
+
+  var getCat = function(key){return CATS.find(function(c){return c.key===key;})||CATS[0];};
+  var getCatS = function(key){return catColors(key,S);};
+
+  var filtTasks = tasks.filter(function(t){
+    if(vm==="today") return t.due===TD;
+    if(vm==="upcoming") return t.due>TD && !t.done;
+    if(vm==="overdue") return t.due<TD && !t.done;
+    if(vm==="done") return t.done;
+    return true;
+  }).filter(function(t){return flt==="all" || t.cat===flt;});
+
+  // ─ Goal helpers ─
+  var addGoal = function(){
+    if(!gf.text.trim()) return;
+    upd(function(d){return{goals:d.goals.concat([{id:uid(),text:gf.text.trim(),deadline:gf.deadline||"",status:"In progress",notes:"",created:TD}])};});
+    setGf({text:"",deadline:"",status:"In progress"});
+    setAddG(false);
+  };
+  var updateGoal = function(id,patch){upd(function(d){return{goals:d.goals.map(function(g){return g.id===id?Object.assign({},g,patch):g;})};});};
+  var deleteGoal = function(id){upd(function(d){return{goals:d.goals.filter(function(g){return g.id!==id;})};});};
+
+  // ─ Photo helpers ─
+  var stale = photos.filter(function(j){return j.status==="enquiry" && ago(j.created||j.date)>=3;});
+  var moRev = photos.filter(function(j){return j.status==="completed" && j.date && j.date.startsWith(MK);}).reduce(function(s,j){return s+(parseFloat(j.revenue)||0);},0);
+  var addPhoto = function(){
+    if(!pf.client.trim()) return;
+    upd(function(d){return{photos:[{id:uid(),client:pf.client.trim(),date:pf.date,location:pf.location,status:pf.status,revenue:pf.revenue,created:TD}].concat(d.photos)};});
+    setPf({client:"",date:TD,location:"",status:"enquiry",revenue:""});
+    setAddP(false);
+  };
+  var updatePhotoStatus = function(id,st){upd(function(d){return{photos:d.photos.map(function(j){return j.id===id?Object.assign({},j,{status:st}):j;})};});};
+
+  // ─ Body helpers ─
+  var addBodyStat = function(){
+    if(!bf.weight) return;
+    upd(function(d){return{body:[{id:uid(),weight:parseFloat(bf.weight),date:TD}].concat(d.body)};});
+    setBf({weight:""});
+    setAddB(false);
+  };
+
+  // ─ Week data ─
+  var wkData = WK.map(function(date){
+    var dt = new Date(date);
+    return {
+      date:date,
+      day:DAYS_S[dt.getDay()],
+      num:dt.getDate(),
+      done:ACTS.filter(function(a){return isAct(a.key,date);}),
+      note:notes[date]||"",
+      today:date===TD,
+      future:date>TD,
+    };
+  });
+  var wkTotal = wkData.reduce(function(s,d){return s+d.done.length;},0);
+  var wkPossible = ACTS.length * wkData.filter(function(d){return !d.future;}).length;
+  var wkRate = wkPossible > 0 ? Math.round((wkTotal/wkPossible)*100) : 0;
+
+  // ─ Review stats ─
+  var lwT = tasks.filter(function(t){var d=(now-new Date(t.due))/86400000;return d>=0 && d<7;});
+  var doneW = lwT.filter(function(t){return t.done;}).length;
+  var missW = lwT.filter(function(t){return !t.done && t.due<TD;}).length;
+
+  // ─ Voice ─
+  var doSpeak = function(){
     if(spk){window.speechSynthesis.cancel();setSpk(false);}
-    else if(brief){setSpk(true);speak(brief);const iv=setInterval(()=>{if(!window.speechSynthesis.speaking){setSpk(false);clearInterval(iv);}},500);}
+    else if(brief){
+      setSpk(true);
+      speakText(brief);
+      var iv = setInterval(function(){if(!window.speechSynthesis.speaking){setSpk(false);clearInterval(iv);}},500);
+    }
   };
 
-  /* ─ AI Briefing ─ */
-  const genBrief=async()=>{
-    if(!apiKey){setBrief("Add your API key first — tap the key icon below.");return;}
+  // ─ AI Briefing ─
+  var genBriefing = function(){
+    if(!apiKey){setBrief("Add your API key first. Tap the key icon in the header.");return;}
     setBLoad(true);
-    try{
-      const ctx=`Date: ${DAYS_F[N.getDay()]} ${DN} ${MO[MI]} ${YR}
-Tasks: ${todayTasks.map(t=>t.text).join(", ")||"None"} | Overdue: ${overdueTasks.map(t=>t.text).join(", ")||"None"}
-Activity: ${todayActs.map(a=>a.label).join(", ")||"Nothing yet"} | Week rate: ${wkRate}%
-Photo: ${photos.filter(j=>j.status==="booked").length} booked, ${stale.length} stale, ${gbp(moRev)} rev
-${body.length>0?`Weight: ${body[0].weight}kg`:""}
-Portfolio: 8 properties, £498k equity`;
-      const txt=await callAI(apiKey,
-        `You're Ash's AI. He has 8 rental properties in Leeds/Bradford, a photography business, trains boxing/weights/cycling, cutting fat. SHORT punchy morning briefing — under 180 words, conversational (read aloud): ☀ WEATHER Leeds ☁ 📰 NEWS 2-3 UK headlines 📋 TODAY tasks+activity 📷 PHOTO bookings 💪 CLOSER one line coach energy`,
-        `Briefing:\n${ctx}`
-      );
-      setBrief(txt);
-    }catch(e){setBrief("Connection error — check your API key and internet.");}
-    setBLoad(false);
+    var ctx = "Date: "+DAYS_F[now.getDay()]+" "+DN+" "+MO[MI]+" "+YR+"\n"+
+      "Tasks today: "+(todayTasks.map(function(t){return t.text+(t.pri==="urgent"?" (URGENT)":"");}).join(", ")||"None")+"\n"+
+      "Overdue: "+(overdueTasks.map(function(t){return t.text;}).join(", ")||"None")+"\n"+
+      "Activity done: "+(todayActs.map(function(a){return a.label;}).join(", ")||"Nothing yet")+"\n"+
+      "Week activity rate: "+wkRate+"%\n"+
+      "Photo business: "+photos.filter(function(j){return j.status==="booked";}).length+" booked, "+stale.length+" stale enquiries, "+gbp(moRev)+" revenue this month\n"+
+      (body.length>0?"Weight: "+body[0].weight+"kg ("+fmtD(body[0].date)+")":"")+"\n"+
+      "Goals: "+(goals.filter(function(g){return g.status!=="Done";}).map(function(g){return g.text+" ["+g.status+"]";}).join(", ")||"None set")+"\n"+
+      "Portfolio: 8 properties in Leeds/Bradford, approx 498k equity";
+    callAI(apiKey,
+      "You are Ash's personal AI assistant. He owns 8 rental properties (2 HMOs, 6 BTLs) in Leeds and Bradford, runs a property photography business, and trains boxing, weightlifting, and cycling while cutting body fat. He is based in Leeds, UK.\n\nDeliver a concise, punchy morning briefing. Structure it clearly with these headings:\n\nWEATHER - Leeds today, one sentence, what to wear.\nNEWS - Two or three UK headlines. Prioritise property market, interest rates, anything affecting landlords.\nYOUR DAY - Summarise his tasks. Call out any overdue tasks firmly.\nACTIVITY - What he has done today and this week. Encourage him if gaps.\nPHOTO BUSINESS - Booked shoots, revenue, any stale enquiries to chase.\nCLOSER - One motivational sentence. Think boxing coach, not greeting card.\n\nKeep it under 180 words. Be direct and warm. Do NOT use emoji or special symbols anywhere in your response. Use plain text only. This will be read aloud by text-to-speech so write conversationally.",
+      "Generate my morning briefing based on this data:\n\n"+ctx,
+      function(txt){setBrief(txt);setBLoad(false);}
+    );
   };
 
-  /* ─ AI Review ─ */
-  const genReview=async()=>{
-    if(!apiKey){setAiResult("Add your API key first.");return;}
+  // ─ AI Review ─
+  var genReview = function(){
+    if(!apiKey){setAiRes("Add your API key first.");return;}
     setAiLoad(true);
-    try{
-      const ctx=`Tasks: ${doneW} done, ${missW} missed\nActivity ${wkRate}%:\n${wkData.filter(d=>!d.future).map(d=>`${d.day}: ${d.done.map(a=>a.label).join(",")||"rest"}${d.note?" — "+d.note:""}`).join("\n")}\n${body.length>0?`Weight: ${body[0].weight}kg`:""}\nPhoto: ${photos.filter(j=>j.status==="enquiry").length} enquiries, ${photos.filter(j=>j.status==="booked").length} booked, ${gbp(moRev)} rev\n${goals.length>0?`Goals: ${goals.map(g=>`${g.text} ${Math.round(g.current)}/${Math.round(g.target)}`).join(", ")}`:""}`;
-      const txt=await callAI(apiKey,
-        "Brutally honest weekly review for Ash (property investor, photographer, trains boxing/weights/cycling, cutting fat). What went well, what didn't. Specific day-by-day plan for next week. Under 300 words. Direct, no fluff.",
-        ctx
-      );
-      setAiResult(txt);
-    }catch{setAiResult("Connection error.");}
-    setAiLoad(false);
+    var ctx = "Tasks this week: "+doneW+" completed, "+missW+" missed\n"+
+      "Activity completion: "+wkRate+"%\n"+
+      "Day by day:\n"+wkData.filter(function(d){return !d.future;}).map(function(d){return d.day+": "+(d.done.map(function(a){return a.label;}).join(", ")||"rest day")+(d.note?" - "+d.note:"");}).join("\n")+"\n"+
+      (body.length>0?"Latest weight: "+body[0].weight+"kg on "+fmtD(body[0].date):"")+"\n"+
+      (body.length>=2?"Previous weight: "+body[1].weight+"kg on "+fmtD(body[1].date):"")+"\n"+
+      "Photography: "+photos.filter(function(j){return j.status==="enquiry";}).length+" enquiries, "+photos.filter(function(j){return j.status==="booked";}).length+" booked, "+gbp(moRev)+" revenue this month\n"+
+      "Goals: "+(goals.map(function(g){return g.text+" ["+g.status+"]"+(g.deadline?" deadline "+fmtD(g.deadline):"");}).join(", ")||"None set");
+    callAI(apiKey,
+      "You are reviewing Ash's week. He owns 8 rental properties in Leeds/Bradford, runs a property photography business, and trains boxing, weightlifting, and cycling while cutting body fat.\n\nGive a brutally honest weekly review. Structure it as:\n\nWHAT WENT WELL - Be specific about what he actually did.\nWHAT NEEDS WORK - Call out gaps honestly. If activity rate is low, say so. If he missed tasks, name them.\nBODY AND TRAINING - Comment on his training consistency and weight trend.\nPHOTOGRAPHY BUSINESS - Is he chasing leads? Revenue on track?\nNEXT WEEK PLAN - Give a specific day-by-day plan for Monday to Sunday covering property admin, photography, training, and personal development.\n\nDo NOT use emoji or special symbols. Use plain text only. Keep it under 280 words. Be direct, specific, and constructive.",
+      "Here is my data for this week:\n\n"+ctx,
+      function(txt){setAiRes(txt);setAiLoad(false);}
+    );
   };
 
-  if(!ok)return <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh"}}><p style={{color:txt2,fontSize:14}}>Loading...</p></div>;
+  // ─ Styles ─
+  var card = {background:S.cardBg,borderRadius:15,border:"1px solid "+S.cardBdr,marginBottom:10,overflow:"hidden",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"};
+  var cardPad = {padding:14};
 
-  return(
-    <div style={{maxWidth:520,margin:"0 auto",padding:"0 16px 100px"}}>
+  // ═══ RENDER ═══
+  return React.createElement("div",{style:{fontFamily:"system-ui,-apple-system,sans-serif",background:S.bg,minHeight:"100vh",maxWidth:480,margin:"0 auto",overflowX:"hidden"}},
 
-      {/* Header */}
-      <div style={{padding:"28px 0 16px",display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
-        <div>
-          <p style={{fontSize:11,color:txt2,fontWeight:600,margin:0,letterSpacing:1.5,textTransform:"uppercase"}}>{DAYS_F[N.getDay()]} {DN} {MO[MI]}</p>
-          <h1 style={{fontSize:28,fontFamily:"'Playfair Display',serif",fontWeight:500,margin:"4px 0 0",color:txt1,letterSpacing:"-0.5px"}}>{greet()}, Ash</h1>
-        </div>
-        <div style={{display:"flex",gap:6}}>
-          {overdueC>0&&<span style={pl(isDark?"#501313":"#FCEBEB",isDark?"#F09595":"#791F1F")}>{overdueC} overdue</span>}
-          <span style={pl(todayActs.length===ACTS.length?ACTS[0].bg:(isDark?"#3D2A06":"#FAEEDA"),todayActs.length===ACTS.length?ACTS[0].color:(isDark?"#FAC775":"#633806"))}>{todayActs.length}/{ACTS.length}</span>
-        </div>
-      </div>
+    // ─ Header ─
+    React.createElement("div",{style:{background:"linear-gradient(135deg,#1e293b,#0f172a)",color:"#fff",padding:"40px 16px 12px",position:"sticky",top:0,zIndex:50}},
+      React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-end"}},
+        React.createElement("div",null,
+          React.createElement("div",{style:{fontSize:11,color:"#94a3b8",marginBottom:2}},"Good "+greetWord+", Ash"),
+          React.createElement("div",{style:{fontSize:18,fontWeight:700}},"Daily HQ"),
+          React.createElement("div",{style:{fontSize:11,color:"#94a3b8",marginTop:4}},DAYS_F[now.getDay()]+" "+DN+" "+MO[MI]+" "+YR)
+        ),
+        React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8}},
+          !apiKey && React.createElement("button",{onClick:function(){setShowKey(true);},style:{background:"none",border:"none",fontSize:16,cursor:"pointer",color:"#fbbf24",padding:0}},"🔑"),
+          React.createElement("button",{onClick:function(){var v=!dm;setDm(v);try{localStorage.setItem("ash-hq-dm",v?"1":"0");}catch(e){}},style:{background:"none",border:"none",fontSize:18,cursor:"pointer",padding:0}},dm?"☀️":"🌙"),
+          overdueC > 0 && React.createElement(Badge,{bg:"#450a0a",color:"#f87171"},overdueC+" overdue")
+        )
+      ),
 
-      {/* Tabs */}
-      <div style={{display:"flex",gap:2,marginBottom:18,overflowX:"auto",background:bg2,borderRadius:14,padding:3}}>
-        {TABS.map(t=>(
-          <button key={t.key} onClick={()=>setTab(t.key)} style={{flex:1,padding:"9px 2px",borderRadius:12,border:"none",cursor:"pointer",background:tab===t.key?bg1:"transparent",color:tab===t.key?txt1:txt2,fontSize:10,fontWeight:600,fontFamily:"inherit",whiteSpace:"nowrap",boxShadow:tab===t.key?"0 1px 4px rgba(0,0,0,0.08)":"none"}}>{t.icon}<br/>{t.label}</button>
-        ))}
-      </div>
+      // Tabs
+      React.createElement("div",{style:{display:"flex",gap:4,marginTop:12,overflowX:"auto",paddingBottom:2}},
+        TABS.map(function(t){return React.createElement("button",{key:t.key,onClick:function(){setTab(t.key);},style:{
+          padding:"8px 12px",borderRadius:10,border:"none",cursor:"pointer",whiteSpace:"nowrap",
+          background:tab===t.key?"rgba(255,255,255,0.15)":"transparent",
+          color:tab===t.key?"#fff":"#64748b",
+          fontSize:12,fontWeight:600,fontFamily:"system-ui",
+        }},t.label);})
+      )
+    ),
 
-      {/* ══════ TODAY ══════ */}
-      {tab==="today"&&<>
-        {/* Property app link */}
-        {PROP_APP&&<a href={PROP_APP} style={{display:"block",width:"100%",padding:"16px",borderRadius:14,border:"none",cursor:"pointer",background:green,color:"#fff",fontSize:15,fontWeight:600,fontFamily:"inherit",marginBottom:12,textDecoration:"none",boxSizing:"border-box"}}>
-          <span style={{fontSize:20,marginRight:8}}>🏠</span> Property portfolio →
-        </a>}
-        {!PROP_APP&&<button onClick={()=>alert("Set PROP_APP URL in the code to link to your property app")} style={{width:"100%",padding:"16px",borderRadius:14,border:"none",cursor:"pointer",background:green,color:"#fff",fontSize:15,fontWeight:600,fontFamily:"inherit",marginBottom:12,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:20}}>🏠</span><div style={{textAlign:"left"}}><div>Property portfolio</div><div style={{fontSize:11,fontWeight:400,opacity:0.8}}>Rents, tenants, compliance</div></div></div><span>→</span>
-        </button>}
+    // API Key prompt
+    showKey && React.createElement("div",{style:Object.assign({},card,cardPad,{margin:"10px 16px",background:S.abg,borderColor:S.atx+"40"})},
+      React.createElement("div",{style:{fontSize:13,fontWeight:600,color:S.atx,marginBottom:8}},"API key for AI features"),
+      React.createElement("div",{style:{fontSize:12,color:S.atx,marginBottom:8}},"Get yours from console.anthropic.com"),
+      React.createElement(Inp,{S:S,value:keyInp,onChange:function(e){setKeyInp(e.target.value);},type:"password",placeholder:"sk-ant-..."}),
+      React.createElement("div",{style:{display:"flex",gap:8}},
+        React.createElement("button",{onClick:function(){if(keyInp.trim()){localStorage.setItem("ash-hq-apikey",keyInp.trim());setApiKey(keyInp.trim());setShowKey(false);setKeyInp("");}},style:{padding:"10px 20px",borderRadius:10,border:"none",cursor:"pointer",background:S.green,color:"#fff",fontSize:13,fontWeight:600,fontFamily:"system-ui",flex:1}},"Save Key"),
+        React.createElement("button",{onClick:function(){setShowKey(false);},style:{padding:"10px 16px",borderRadius:10,border:"1px solid "+S.cardBdr,cursor:"pointer",background:"transparent",fontSize:13,fontFamily:"system-ui",color:S.txt2}},"Cancel")
+      )
+    ),
 
-        {/* Today's tasks */}
-        <div style={cd}>
-          <div style={ch}>
-            <div><div style={ctt}>Today's tasks</div><div style={css}>{allToday.length} to do</div></div>
-            <button onClick={()=>{setTab("tasks");setAdd(true);}} style={bt(green,"#fff")}>+ Add</button>
-          </div>
-          {allToday.length===0&&<div style={{padding:"24px 16px",textAlign:"center",color:txt3,fontSize:13}}>Nothing scheduled — add a task or use templates</div>}
-          {allToday.map((t,i)=>{const c=getCat(t.cat);const od=t.due<TD;return(
-            <div key={t.id} style={{...rw,borderBottom:i<allToday.length-1?`0.5px solid ${bdr2}`:"none"}}>
-              <button onClick={()=>setTasks(p=>p.map(x=>x.id===t.id?{...x,done:true}:x))} style={{width:24,height:24,borderRadius:8,flexShrink:0,border:`2px solid ${od?red:c.c}`,background:"transparent",cursor:"pointer"}}/>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:13.5,fontWeight:500,color:txt1}}>{t.text}</div>
-                <div style={{display:"flex",gap:6,marginTop:3}}>
-                  <span style={pl(c.bg,c.dk)}>{c.label}</span>
-                  {t.pri==="urgent"&&<span style={pl(isDark?"#501313":"#FCEBEB",isDark?"#F09595":"#791F1F")}>Urgent</span>}
-                  {od&&<span style={{fontSize:11,fontWeight:600,color:red}}>Overdue</span>}
-                </div>
-              </div>
-            </div>
-          );})}
-          <div style={{padding:"10px 16px 14px",display:"flex",gap:6,overflowX:"auto"}}>
-            {TMPLS.slice(0,3).map((t,i)=>(
-              <button key={i} onClick={()=>setTasks(p=>[{id:uid(),text:t.text,cat:t.cat,due:TD,pri:"normal",done:false,created:TD},...p])} style={{padding:"6px 12px",borderRadius:20,border:`0.5px solid ${bdr}`,cursor:"pointer",background:"transparent",fontSize:11,fontWeight:500,fontFamily:"inherit",color:txt2,whiteSpace:"nowrap"}}>+ {t.text}</button>
-            ))}
-          </div>
-        </div>
+    // Content area
+    React.createElement("div",{style:{padding:"10px 16px 100px"}},
 
-        {/* Goals */}
-        {goals.length>0&&<div style={cd}>
-          <div style={{padding:"14px 16px"}}>
-            <div style={{...ctt,marginBottom:10}}>Goals</div>
-            {goals.map(g=>{const pct=g.target>0?Math.min(Math.round((g.current/g.target)*100),100):0;return(
-              <div key={g.id} style={{marginBottom:12}}>
-                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                  <span style={{fontSize:13,fontWeight:500,color:txt1}}>{g.text}</span>
-                  <span style={{fontSize:12,fontWeight:600,color:pct>=100?green:(isDark?"#7F77DD":"#534AB7")}}>{pct}%</span>
-                </div>
-                <div style={{background:bg2,borderRadius:20,height:8,overflow:"hidden"}}>
-                  <div style={{height:"100%",borderRadius:20,background:pct>=100?green:(isDark?"#7F77DD":"#534AB7"),width:pct+"%",transition:"width 0.3s"}}/>
-                </div>
-              </div>
-            );})}
-          </div>
-        </div>}
+      // ════════ TODAY TAB ════════
+      tab==="today" && React.createElement(React.Fragment,null,
 
-        {/* Activity */}
-        <div style={cd}>
-          <div style={{padding:"14px 16px"}}>
-            <div style={{...ctt,marginBottom:10}}>Activity</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-              {ACTS.map(a=>{const done=isAct(a.key);return(
-                <button key={a.key} onClick={()=>tglAct(a.key)} style={{padding:"10px",borderRadius:12,cursor:"pointer",fontFamily:"inherit",border:done?`1.5px solid ${a.color}`:`0.5px solid ${bdr}`,background:done?a.bg:"transparent",color:done?a.color:txt3,fontSize:12,fontWeight:600,textAlign:"center",transition:"all 0.15s"}}>
-                  <span style={{fontSize:20}}>{a.icon}</span> {a.label} {done?"✓":""}
-                </button>
-              );})}
-            </div>
-          </div>
-        </div>
+        // Property app link
+        React.createElement("a",{href:PROP_APP||"#",onClick:PROP_APP?undefined:function(e){e.preventDefault();alert("Set PROP_APP URL in the code to link to your property app. Edit index.html on GitHub and put your property app URL between the quotes.");},style:{display:"block",padding:"14px 16px",borderRadius:15,border:"none",cursor:"pointer",background:"linear-gradient(135deg,#16a34a,#15803d)",color:"#fff",fontSize:14,fontWeight:600,fontFamily:"system-ui",marginBottom:10,textDecoration:"none"}},
+          React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},
+            React.createElement("div",null,
+              React.createElement("div",null,"🏠 Property Portfolio"),
+              React.createElement("div",{style:{fontSize:11,fontWeight:400,opacity:0.85,marginTop:2}},"Rents, tenants, jobs, compliance")
+            ),
+            React.createElement("span",{style:{fontSize:18}},"→")
+          )
+        ),
 
-        {/* Week grid */}
-        <div style={cd}>
-          <div style={{padding:"14px 16px"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-              <div style={ctt}>This week</div>
-              <span style={pl(isDark?"#1F1B3D":"#EEEDFE",isDark?"#AFA9EC":"#3C3489")}>{wkRate}%</span>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
-              {wkData.map(d=>(
-                <div key={d.date} style={{textAlign:"center",opacity:d.future?0.3:1}}>
-                  <div style={{fontSize:9,color:d.today?txt1:txt2,fontWeight:d.today?700:500,marginBottom:3}}>{d.day}</div>
-                  <div style={{width:32,height:32,borderRadius:10,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,background:d.done.length===ACTS.length?ACTS[0].bg:d.done.length>0?(isDark?"#3D2A06":"#FAEEDA"):"transparent",color:d.done.length===ACTS.length?ACTS[0].color:d.done.length>0?(isDark?"#FAC775":"#633806"):txt3,border:d.today?`2px solid ${txt1}`:`0.5px solid ${bdr}`}}>
-                    {d.done.length||"—"}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+        // Today's tasks
+        React.createElement("div",{style:card},
+          React.createElement("div",{style:Object.assign({},cardPad,{display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid "+S.cardBdr})},
+            React.createElement("div",null,
+              React.createElement("div",{style:{fontSize:15,fontWeight:700,color:S.txt}},"Today's tasks"),
+              React.createElement("div",{style:{fontSize:12,color:S.txt2,marginTop:2}},allToday.length>0?allToday.length+" to do":"Nothing scheduled")
+            ),
+            React.createElement("button",{onClick:function(){setTab("tasks");setAddMode(true);},style:{padding:"8px 14px",borderRadius:10,border:"none",cursor:"pointer",background:S.dark,color:"#fff",fontSize:12,fontWeight:600,fontFamily:"system-ui"}},"+ Add")
+          ),
+          allToday.length===0 && React.createElement("div",{style:{padding:"20px 14px",textAlign:"center",color:S.txt3,fontSize:13}},"Clear day. Add a task or grab a template."),
+          allToday.map(function(t,i){
+            var cs = getCatS(t.cat);
+            var od = t.due < TD;
+            return React.createElement("div",{key:t.id,style:{padding:"12px 14px",display:"flex",gap:10,alignItems:"center",borderBottom:i<allToday.length-1?"1px solid "+S.cardBdr:"none"}},
+              React.createElement("button",{onClick:function(){toggleTask(t.id);},style:{width:22,height:22,borderRadius:7,flexShrink:0,border:"2px solid "+(od?S.red:cs.c),background:"transparent",cursor:"pointer"}}),
+              React.createElement("div",{style:{flex:1,minWidth:0}},
+                React.createElement("div",{style:{fontSize:13,fontWeight:500,color:S.txt}},t.text),
+                React.createElement("div",{style:{display:"flex",gap:6,marginTop:3}},
+                  React.createElement(Badge,{bg:cs.bg,color:cs.c},getCat(t.cat).label),
+                  t.pri==="urgent" && React.createElement(Badge,{bg:S.rbg,color:S.rtx},"Urgent"),
+                  od && React.createElement("span",{style:{fontSize:11,fontWeight:600,color:S.red}},"Overdue")
+                )
+              ),
+              React.createElement("a",{href:calUrl(t.text,t.due),target:"_blank",rel:"noopener",style:{fontSize:11,color:S.blue,textDecoration:"none",flexShrink:0}},"📅")
+            );
+          }),
+          // Quick templates
+          React.createElement("div",{style:{padding:"10px 14px",display:"flex",gap:6,overflowX:"auto"}},
+            TMPLS.slice(0,3).map(function(t,i){
+              return React.createElement("button",{key:i,onClick:function(){upd(function(d){return{tasks:[{id:uid(),text:t.text,cat:t.cat,due:TD,pri:"normal",done:false,created:TD}].concat(d.tasks)};});},style:{padding:"5px 10px",borderRadius:99,border:"1px solid "+S.cardBdr,cursor:"pointer",background:"transparent",fontSize:11,fontWeight:500,fontFamily:"system-ui",color:S.txt2,whiteSpace:"nowrap"}},"+ "+t.text);
+            })
+          )
+        ),
 
-        {/* Stale enquiries */}
-        {stale.length>0&&<div style={{...cd,borderColor:isDark?"#501313":"#F7C1C1",background:isDark?"#2D0F0F":"#FEF2F2"}}>
-          <div style={{padding:"12px 16px"}}>
-            <div style={{fontSize:13,fontWeight:600,color:isDark?"#F09595":"#791F1F",marginBottom:6}}>Stale photo enquiries</div>
-            {stale.map(j=><div key={j.id} style={{fontSize:13,color:isDark?"#F09595":"#A32D2D",padding:"3px 0"}}>{j.client} — {ago(j.created||j.date)}d old</div>)}
-          </div>
-        </div>}
+        // Goals preview
+        goals.filter(function(g){return g.status!=="Done";}).length > 0 && React.createElement("div",{style:card},
+          React.createElement("div",{style:Object.assign({},cardPad,{borderBottom:"1px solid "+S.cardBdr})},
+            React.createElement("div",{style:{fontSize:15,fontWeight:700,color:S.txt}},"Active goals")
+          ),
+          goals.filter(function(g){return g.status!=="Done";}).map(function(g,i,arr){
+            var statusMap = {"In progress":{bg:S.bbg,c:S.btx},"On hold":{bg:S.abg,c:S.atx},"Almost done":{bg:S.gbg,c:S.gtx}};
+            var sc = statusMap[g.status] || statusMap["In progress"];
+            return React.createElement("div",{key:g.id,style:{padding:"12px 14px",borderBottom:i<arr.length-1?"1px solid "+S.cardBdr:"none"}},
+              React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},
+                React.createElement("div",{style:{fontSize:13,fontWeight:600,color:S.txt}},g.text),
+                React.createElement(Badge,{bg:sc.bg,color:sc.c},g.status)
+              ),
+              g.deadline && React.createElement("div",{style:{fontSize:11,color:S.txt2,marginTop:3}},"Deadline: "+fmtD(g.deadline))
+            );
+          })
+        ),
 
-        {/* AI Briefing */}
-        <div style={cd}>
-          <div style={ch}>
-            <div><div style={ctt}>AI Briefing</div><div style={css}>Weather, news, your day</div></div>
-            <div style={{display:"flex",gap:6}}>
-              {brief&&<button onClick={doSpk} style={bt(spk?(isDark?"#501313":"#FCEBEB"):(isDark?"#1F1B3D":"#EEEDFE"),spk?(isDark?"#F09595":"#791F1F"):(isDark?"#AFA9EC":"#534AB7"))}>{spk?"Stop":"Play"}</button>}
-              <button onClick={genBrief} disabled={bLoad} style={bt(bLoad?bg2:(isDark?"#e5e5e5":"#1a1a1a"),bLoad?txt2:(isDark?"#0a0a0a":"#fff"))}>{bLoad?"...":brief?"Refresh":"Generate"}</button>
-            </div>
-          </div>
-          {brief&&<div style={{padding:"14px 16px",fontSize:13.5,lineHeight:1.75,color:txt1,whiteSpace:"pre-wrap"}}>{brief}</div>}
-          {!brief&&!bLoad&&<div style={{textAlign:"center",padding:"24px 16px",color:txt3,fontSize:13}}>
-            {apiKey?"Tap Generate for your morning briefing":"Add your API key below, then tap Generate"}
-          </div>}
-        </div>
+        // Activity quick
+        React.createElement("div",{style:card},
+          React.createElement("div",{style:Object.assign({},cardPad)},
+            React.createElement("div",{style:{fontSize:15,fontWeight:700,color:S.txt,marginBottom:10}},"Activity — "+todayActs.length+"/"+ACTS.length+" done"),
+            React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}},
+              ACTS.map(function(a){
+                var done = isAct(a.key);
+                return React.createElement("button",{key:a.key,onClick:function(){tglAct(a.key);},style:{
+                  padding:"10px 8px",borderRadius:12,cursor:"pointer",fontFamily:"system-ui",textAlign:"center",
+                  border:done?"2px solid "+S.green:"1px solid "+S.cardBdr,
+                  background:done?S.gbg:"transparent",
+                  color:done?S.gtx:S.txt3,
+                  fontSize:12,fontWeight:600,transition:"all 0.15s",
+                }},a.icon+" "+a.label+(done?" ✓":""));
+              })
+            )
+          )
+        ),
 
-        {/* API Key */}
-        {!apiKey&&<div style={{...cd,borderColor:isDark?"#3D2A06":"#fde68a",background:isDark?"#1F1706":"#fffbeb"}}>
-          <div style={{padding:"14px 16px"}}>
-            <div style={{fontSize:13,fontWeight:600,color:isDark?"#FAC775":"#854F0B",marginBottom:8}}>API key needed for AI features</div>
-            <div style={{fontSize:12,color:isDark?"#BA7517":"#854F0B",marginBottom:8}}>Get yours free at console.anthropic.com</div>
-            {showKey?<div>
-              <input value={keyInput} onChange={e=>setKeyInput(e.target.value)} type="password" placeholder="sk-ant-..." style={ip}/>
-              <button onClick={()=>{if(keyInput.trim()){localStorage.setItem("ash-hq-apikey",keyInput.trim());setApiKey(keyInput.trim());setShowKey(false);}}} style={{...bt(green,"#fff"),width:"100%",padding:11}}>Save key</button>
-            </div>:<button onClick={()=>setShowKey(true)} style={bt(isDark?"#3D2A06":"#854F0B","#fff")}>Add API key</button>}
-          </div>
-        </div>}
-      </>}
+        // Week grid
+        React.createElement("div",{style:card},
+          React.createElement("div",{style:Object.assign({},cardPad)},
+            React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}},
+              React.createElement("div",{style:{fontSize:15,fontWeight:700,color:S.txt}},"This week"),
+              React.createElement(Badge,{bg:wkRate>=50?S.gbg:S.abg,color:wkRate>=50?S.gtx:S.atx},wkRate+"%")
+            ),
+            React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}},
+              wkData.map(function(d){
+                var allDone = d.done.length===ACTS.length;
+                var some = d.done.length>0;
+                return React.createElement("div",{key:d.date,style:{textAlign:"center",opacity:d.future?0.3:1}},
+                  React.createElement("div",{style:{fontSize:9,color:d.today?S.txt:S.txt3,fontWeight:d.today?700:500,marginBottom:3}},d.day),
+                  React.createElement("div",{style:{width:30,height:30,borderRadius:10,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,
+                    background:allDone?S.gbg:some?S.abg:"transparent",
+                    color:allDone?S.gtx:some?S.atx:S.txt3,
+                    border:d.today?"2px solid "+S.txt:"1px solid "+S.cardBdr,
+                  }},d.done.length||"—")
+                );
+              })
+            )
+          )
+        ),
 
-      {/* ══════ TASKS ══════ */}
-      {tab==="tasks"&&<>
-        <div style={{display:"flex",gap:6,marginBottom:10,overflowX:"auto"}}>
-          {["today","upcoming","overdue","all","done"].map(v=>(
-            <button key={v} onClick={()=>setVm(v)} style={{padding:"7px 14px",borderRadius:10,border:"none",cursor:"pointer",background:vm===v?(isDark?"#e5e5e5":"#1a1a1a"):bg2,color:vm===v?(isDark?"#0a0a0a":"#fff"):txt2,fontSize:12,fontWeight:600,fontFamily:"inherit",whiteSpace:"nowrap",textTransform:"capitalize"}}>{v}{v==="overdue"&&overdueC>0?` (${overdueC})`:""}</button>
-          ))}
-        </div>
-        <div style={{display:"flex",gap:5,marginBottom:14,overflowX:"auto"}}>
-          <button onClick={()=>setFlt("all")} style={{padding:"5px 12px",borderRadius:20,border:flt==="all"?`1.5px solid ${txt1}`:`0.5px solid ${bdr}`,cursor:"pointer",background:"transparent",fontSize:11,fontWeight:600,fontFamily:"inherit",color:flt==="all"?txt1:txt2}}>All</button>
-          {CATS.map(c=>(
-            <button key={c.key} onClick={()=>setFlt(c.key)} style={{padding:"5px 12px",borderRadius:20,cursor:"pointer",fontSize:11,fontWeight:600,fontFamily:"inherit",border:flt===c.key?`1.5px solid ${c.c}`:`0.5px solid ${bdr}`,background:flt===c.key?c.bg:"transparent",color:flt===c.key?c.c:txt2,whiteSpace:"nowrap"}}>{c.icon} {c.label}</button>
-          ))}
-        </div>
+        // Stale enquiries
+        stale.length > 0 && React.createElement("div",{style:Object.assign({},card,{background:S.rbg,borderColor:S.rtx+"40"})},
+          React.createElement("div",{style:cardPad},
+            React.createElement("div",{style:{fontSize:13,fontWeight:600,color:S.rtx,marginBottom:6}},"Stale photo enquiries — chase now"),
+            stale.map(function(j){return React.createElement("div",{key:j.id,style:{fontSize:13,color:S.rtx,padding:"3px 0"}},j.client+" — "+ago(j.created||j.date)+" days");})
+          )
+        ),
 
-        {tmpls&&<div style={{...cd,padding:"12px 16px"}}><div style={{fontSize:13,fontWeight:600,marginBottom:8,color:txt1}}>Templates</div><div style={{display:"flex",flexWrap:"wrap",gap:6}}>{TMPLS.map((t,i)=>{const c=getCat(t.cat);return(<button key={i} onClick={()=>{setTasks(p=>[{id:uid(),text:t.text,cat:t.cat,due:TD,pri:"normal",done:false,created:TD},...p]);setTmpls(false);}} style={{padding:"6px 12px",borderRadius:20,border:`0.5px solid ${c.c}30`,background:c.bg,color:c.dk,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>+ {t.text}</button>);})}</div></div>}
+        // AI Briefing
+        React.createElement("div",{style:card},
+          React.createElement("div",{style:Object.assign({},cardPad,{display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid "+S.cardBdr})},
+            React.createElement("div",null,
+              React.createElement("div",{style:{fontSize:15,fontWeight:700,color:S.txt}},"AI Briefing"),
+              React.createElement("div",{style:{fontSize:12,color:S.txt2,marginTop:2}},"Weather, news, your day — read aloud")
+            ),
+            React.createElement("div",{style:{display:"flex",gap:6}},
+              brief && React.createElement("button",{onClick:doSpeak,style:{padding:"8px 12px",borderRadius:10,border:"none",cursor:"pointer",background:spk?S.rbg:S.bbg,color:spk?S.rtx:S.btx,fontSize:12,fontWeight:600,fontFamily:"system-ui"}},spk?"Stop":"Play"),
+              React.createElement("button",{onClick:genBriefing,disabled:bLoad,style:{padding:"8px 12px",borderRadius:10,border:"none",cursor:"pointer",background:bLoad?S.light:S.dark,color:bLoad?S.gray:"#fff",fontSize:12,fontWeight:600,fontFamily:"system-ui"}},bLoad?"...":brief?"Refresh":"Generate")
+            )
+          ),
+          brief && React.createElement("div",{style:Object.assign({},cardPad,{fontSize:13,lineHeight:1.8,color:S.txt,whiteSpace:"pre-wrap"})},brief),
+          !brief && !bLoad && React.createElement("div",{style:{padding:"20px 14px",textAlign:"center",color:S.txt3,fontSize:13}},apiKey?"Tap Generate for your morning briefing":"Add your API key to enable AI features")
+        )
+      ),
 
-        {filtTasks.length===0&&<div style={{textAlign:"center",padding:"32px 16px",color:txt3,fontSize:13}}>{vm==="done"?"Nothing done yet":"No tasks here"}</div>}
-        {filtTasks.map(t=>{const c=getCat(t.cat);const od=!t.done&&t.due<TD;return(
-          <div key={t.id} style={{...cd,borderLeft:`3px solid ${od?red:c.c}`,opacity:t.done?0.5:1,marginBottom:8}}>
-            <div style={{padding:"12px 14px",display:"flex",gap:10,alignItems:"flex-start"}}>
-              <button onClick={()=>setTasks(p=>p.map(x=>x.id===t.id?{...x,done:!x.done}:x))} style={{width:24,height:24,borderRadius:8,flexShrink:0,marginTop:1,border:t.done?"none":`2px solid ${c.c}`,background:t.done?c.c:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:12}}>{t.done?"✓":""}</button>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:13.5,fontWeight:500,color:txt1,textDecoration:t.done?"line-through":"none",wordBreak:"break-word"}}>{t.text}</div>
-                <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap"}}>
-                  <span style={pl(c.bg,c.dk)}>{c.label}</span>
-                  {t.pri==="urgent"&&<span style={pl(isDark?"#501313":"#FCEBEB",isDark?"#F09595":"#791F1F")}>Urgent</span>}
-                  {od&&<span style={{fontSize:11,fontWeight:600,color:red}}>Overdue</span>}
-                  {t.due!==TD&&!od&&<span style={{fontSize:11,color:txt2}}>{fdt(t.due)}</span>}
-                </div>
-              </div>
-              <button onClick={()=>setTasks(p=>p.filter(x=>x.id!==t.id))} style={{width:26,height:26,borderRadius:8,border:"none",background:bg2,cursor:"pointer",fontSize:12,color:txt2,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>×</button>
-            </div>
-          </div>
-        );})}
+      // ════════ TASKS & GOALS TAB ════════
+      tab==="tasks" && React.createElement(React.Fragment,null,
 
-        <div style={{display:"flex",gap:8,marginTop:4}}>
-          {!add&&<><button onClick={()=>setAdd(true)} style={{flex:1,padding:13,borderRadius:14,border:`1.5px dashed ${bdr}`,cursor:"pointer",background:"transparent",fontSize:13,fontWeight:600,fontFamily:"inherit",color:txt2}}>+ New task</button>
-          <button onClick={()=>setTmpls(!tmpls)} style={{padding:"13px 18px",borderRadius:14,border:`0.5px solid ${bdr}`,cursor:"pointer",background:"transparent",fontSize:13,fontWeight:600,fontFamily:"inherit",color:txt2}}>Templates</button></>}
-        </div>
+        // View filters
+        React.createElement("div",{style:{display:"flex",gap:6,marginBottom:10,overflowX:"auto"}},
+          ["today","upcoming","overdue","all","done"].map(function(v){return React.createElement("button",{key:v,onClick:function(){setVm(v);},style:{
+            padding:"7px 14px",borderRadius:10,border:"none",cursor:"pointer",
+            background:vm===v?S.dark:S.cardBg,color:vm===v?"#fff":S.txt2,
+            fontSize:12,fontWeight:600,fontFamily:"system-ui",whiteSpace:"nowrap",textTransform:"capitalize",
+          }},v+(v==="overdue"&&overdueC>0?" ("+overdueC+")":""));})
+        ),
 
-        {add&&<div style={{...cd,padding:16,marginTop:8}}>
-          <input value={form.text} onChange={e=>setForm(f=>({...f,text:e.target.value}))} onKeyDown={e=>e.key==="Enter"&&doAdd()} placeholder="What needs doing?" style={{...ip,fontSize:14}} autoFocus/>
-          <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
-            {CATS.map(c=>(<button key={c.key} onClick={()=>setForm(f=>({...f,cat:c.key}))} style={{padding:"5px 10px",borderRadius:20,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",border:form.cat===c.key?`1.5px solid ${c.c}`:`0.5px solid ${bdr}`,background:form.cat===c.key?c.bg:"transparent",color:form.cat===c.key?c.c:txt2}}>{c.icon} {c.label}</button>))}
-          </div>
-          <div style={{display:"flex",gap:8,marginBottom:10}}>
-            <input type="date" value={form.due} onChange={e=>setForm(f=>({...f,due:e.target.value}))} style={{flex:1,padding:10,borderRadius:10,border:`0.5px solid ${bdr}`,fontSize:12,fontFamily:"inherit",outline:"none",background:bg1,color:txt1}}/>
-            <button onClick={()=>setForm(f=>({...f,pri:f.pri==="urgent"?"normal":"urgent"}))} style={{padding:"10px 14px",borderRadius:10,cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit",border:form.pri==="urgent"?`1.5px solid ${red}`:`0.5px solid ${bdr}`,background:form.pri==="urgent"?(isDark?"#501313":"#FCEBEB"):"transparent",color:form.pri==="urgent"?red:txt2}}>Urgent</button>
-          </div>
-          <div style={{display:"flex",gap:8}}>
-            <button onClick={doAdd} style={{...bt(green,"#fff"),flex:1,padding:12}}>Add task</button>
-            <button onClick={()=>setAdd(false)} style={{padding:"12px 20px",borderRadius:10,border:`0.5px solid ${bdr}`,cursor:"pointer",background:"transparent",fontSize:13,fontFamily:"inherit",color:txt2}}>Cancel</button>
-          </div>
-        </div>}
-      </>}
+        // Category filters
+        React.createElement("div",{style:{display:"flex",gap:5,marginBottom:14,overflowX:"auto"}},
+          React.createElement("button",{onClick:function(){setFlt("all");},style:{padding:"5px 12px",borderRadius:99,border:flt==="all"?"2px solid "+S.txt:"1px solid "+S.cardBdr,cursor:"pointer",background:"transparent",fontSize:11,fontWeight:600,fontFamily:"system-ui",color:flt==="all"?S.txt:S.txt2}},"All"),
+          CATS.map(function(c){var cs=getCatS(c.key);return React.createElement("button",{key:c.key,onClick:function(){setFlt(c.key);},style:{padding:"5px 12px",borderRadius:99,cursor:"pointer",fontSize:11,fontWeight:600,fontFamily:"system-ui",border:flt===c.key?"2px solid "+cs.c:"1px solid "+S.cardBdr,background:flt===c.key?cs.bg:"transparent",color:flt===c.key?cs.c:S.txt2,whiteSpace:"nowrap"}},c.icon+" "+c.label);})
+        ),
 
-      {/* ══════ ACTIVITY ══════ */}
-      {tab==="activity"&&<>
-        <div style={cd}>
-          <div style={ch}><div><div style={ctt}>Today</div><div style={css}>Tap what you've done</div></div><span style={pl(todayActs.length===ACTS.length?ACTS[0].bg:(isDark?"#3D2A06":"#FAEEDA"),todayActs.length===ACTS.length?ACTS[0].color:(isDark?"#FAC775":"#633806"))}>{todayActs.length}/{ACTS.length}</span></div>
-          <div style={{padding:"12px 16px 8px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-            {ACTS.map(a=>{const done=isAct(a.key);return(
-              <button key={a.key} onClick={()=>tglAct(a.key)} style={{padding:"14px 12px",borderRadius:14,cursor:"pointer",fontFamily:"inherit",border:done?`2px solid ${a.color}`:`0.5px solid ${bdr}`,background:done?a.bg:"transparent",color:done?a.color:txt3,fontSize:13,fontWeight:600,textAlign:"center",transition:"all 0.15s"}}>
-                <div style={{fontSize:26,marginBottom:4}}>{a.icon}</div>{a.label}{done&&<div style={{fontSize:16,marginTop:4}}>✓</div>}
-              </button>
-            );})}
-          </div>
-          <div style={{padding:"8px 16px 14px"}}>
-            {noteEdit?<div style={{display:"flex",gap:8}}><input value={noteText} onChange={e=>setNoteText(e.target.value)} placeholder="How was today?" style={{flex:1,padding:10,borderRadius:10,border:`0.5px solid ${bdr}`,fontSize:12,fontFamily:"inherit",outline:"none",background:bg1,color:txt1}} autoFocus/><button onClick={()=>{if(noteText.trim())setNotes(p=>({...p,[TD]:noteText.trim()}));setNoteEdit(false);}} style={bt(green,"#fff")}>Save</button></div>
-            :<button onClick={()=>{setNoteText(notes[TD]||"");setNoteEdit(true);}} style={{fontSize:12,color:notes[TD]?txt1:green,fontWeight:notes[TD]?400:600,background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",padding:0}}>{notes[TD]||"+ Add note"}</button>}
-          </div>
-        </div>
+        // Templates
+        showTmpls && React.createElement("div",{style:Object.assign({},card,cardPad)},
+          React.createElement("div",{style:{fontSize:13,fontWeight:600,color:S.txt,marginBottom:8}},"Recurring templates"),
+          React.createElement("div",{style:{display:"flex",flexWrap:"wrap",gap:6}},
+            TMPLS.map(function(t,i){var cs=getCatS(t.cat);return React.createElement("button",{key:i,onClick:function(){upd(function(d){return{tasks:[{id:uid(),text:t.text,cat:t.cat,due:TD,pri:"normal",done:false,created:TD}].concat(d.tasks)};});setShowTmpls(false);},style:{padding:"5px 10px",borderRadius:99,border:"1px solid "+cs.c+"40",background:cs.bg,color:cs.c,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"system-ui"}},"+ "+t.text);})
+          )
+        ),
 
-        {/* Week */}
-        <div style={cd}>
-          <div style={ch}><div style={ctt}>This week</div><span style={pl(isDark?"#1F1B3D":"#EEEDFE",isDark?"#AFA9EC":"#3C3489")}>{wkRate}%</span></div>
-          <div style={{padding:"8px 16px 14px"}}>
-            {wkData.map(d=>(
-              <div key={d.date} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`0.5px solid ${bdr2}`,opacity:d.future?0.3:1}}>
-                <div style={{width:36,textAlign:"center"}}>
-                  <div style={{fontSize:10,fontWeight:d.today?700:500,color:d.today?txt1:txt2}}>{d.day}</div>
-                  <div style={{fontSize:14,fontWeight:700,color:d.today?txt1:txt3}}>{d.num}</div>
-                </div>
-                <div style={{flex:1,display:"flex",gap:4,flexWrap:"wrap"}}>
-                  {d.done.length>0?d.done.map(a=>(<span key={a.key} style={{...pl(a.bg,a.color),fontSize:10,padding:"2px 8px",borderRadius:20}}>{a.icon} {a.label}</span>)):<span style={{fontSize:11,color:txt3}}>{d.future?"—":"Rest day"}</span>}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        // Task list
+        filtTasks.length===0 && React.createElement("div",{style:{textAlign:"center",padding:"30px 14px",color:S.txt3,fontSize:13}},vm==="done"?"Nothing completed yet":"No tasks here"),
 
-        {/* Weight with dates */}
-        <div style={cd}>
-          <div style={ch}><div><div style={ctt}>Weight</div><div style={css}>{body.length>0?`${body[0].weight}kg — ${fdt(body[0].date)}`:"Track your cut"}</div></div></div>
-          {body.length>=2&&<div style={{padding:"8px 16px 4px"}}>
-            <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:6}}>
-              <span style={{color:txt2}}>Last {Math.min(body.length,8)}</span>
-              <span style={{fontWeight:600,color:body[0].weight<body[Math.min(body.length-1,7)].weight?green:red}}>{body[0].weight<body[Math.min(body.length-1,7)].weight?"↓ Dropping":"↑ Up"}</span>
-            </div>
-            <div style={{display:"flex",alignItems:"flex-end",gap:3,height:60}}>
-              {body.slice(0,8).reverse().map((b,i,a)=>{const mn=Math.min(...a.map(x=>x.weight));const mx=Math.max(...a.map(x=>x.weight));const rng=mx-mn||1;return(
-                <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                  <div style={{fontSize:9,color:txt2,fontWeight:500}}>{b.weight}</div>
-                  <div style={{width:"100%",height:Math.round(10+((b.weight-mn)/rng)*40),borderRadius:4,background:i===a.length-1?green:ACTS[0].bg}}/>
-                  <div style={{fontSize:8,color:txt3}}>{fdt(b.date)}</div>
-                </div>
-              );})}
-            </div>
-          </div>}
-          {addB?<div style={{padding:"10px 16px 14px",display:"flex",gap:8}}>
-            <input value={bf.weight} onChange={e=>setBf({weight:e.target.value})} placeholder="kg" type="number" step="0.1" style={{width:80,padding:10,borderRadius:10,border:`0.5px solid ${bdr}`,fontSize:13,fontFamily:"inherit",outline:"none",background:bg1,color:txt1}} autoFocus/>
-            <button onClick={()=>{if(!bf.weight)return;setBody(p=>[{id:uid(),weight:parseFloat(bf.weight),date:TD},...p]);setBf({weight:""});setAddB(false);}} style={bt(green,"#fff")}>Save</button>
-            <button onClick={()=>setAddB(false)} style={{padding:"8px 12px",borderRadius:10,border:`0.5px solid ${bdr}`,cursor:"pointer",background:"transparent",fontSize:13,fontFamily:"inherit",color:txt2}}>×</button>
-          </div>:<div style={{padding:"10px 16px 14px"}}><button onClick={()=>setAddB(true)} style={{fontSize:12,color:green,fontWeight:600,background:"none",border:"none",cursor:"pointer",fontFamily:"inherit"}}>+ Log weigh-in</button></div>}
-        </div>
-      </>}
+        filtTasks.map(function(t){
+          var cs = getCatS(t.cat);
+          var od = !t.done && t.due<TD;
+          var editing = editId===t.id;
+          return React.createElement("div",{key:t.id,style:Object.assign({},card,{borderLeft:"3px solid "+(od?S.red:cs.c),opacity:t.done?0.5:1,marginBottom:8})},
+            editing ? React.createElement("div",{style:cardPad},
+              React.createElement(Inp,{S:S,value:editForm.text||"",onChange:function(e){setEditForm(function(p){return Object.assign({},p,{text:e.target.value});});},autoFocus:true}),
+              React.createElement("div",{style:{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}},
+                CATS.map(function(c){var ccs=getCatS(c.key);return React.createElement("button",{key:c.key,onClick:function(){setEditForm(function(p){return Object.assign({},p,{cat:c.key});});},style:{padding:"4px 10px",borderRadius:99,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"system-ui",border:editForm.cat===c.key?"2px solid "+ccs.c:"1px solid "+S.cardBdr,background:editForm.cat===c.key?ccs.bg:"transparent",color:editForm.cat===c.key?ccs.c:S.txt2}},c.icon+" "+c.label);})
+              ),
+              React.createElement("div",{style:{display:"flex",gap:8}},
+                React.createElement(Inp,{S:S,type:"date",value:editForm.due||"",onChange:function(e){setEditForm(function(p){return Object.assign({},p,{due:e.target.value});});},style:{flex:1}}),
+                React.createElement("button",{onClick:function(){setEditForm(function(p){return Object.assign({},p,{pri:p.pri==="urgent"?"normal":"urgent"});});},style:{padding:"10px 12px",borderRadius:10,cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"system-ui",border:editForm.pri==="urgent"?"2px solid "+S.red:"1px solid "+S.cardBdr,background:editForm.pri==="urgent"?S.rbg:"transparent",color:editForm.pri==="urgent"?S.rtx:S.txt2}},"Urgent")
+              ),
+              React.createElement("div",{style:{display:"flex",gap:8,marginTop:4}},
+                React.createElement("button",{onClick:function(){saveEdit(t.id);},style:{flex:1,padding:10,borderRadius:10,border:"none",cursor:"pointer",background:S.green,color:"#fff",fontSize:13,fontWeight:600,fontFamily:"system-ui"}},"Save"),
+                React.createElement("button",{onClick:function(){setEditId(null);},style:{padding:"10px 16px",borderRadius:10,border:"1px solid "+S.cardBdr,cursor:"pointer",background:"transparent",fontSize:13,fontFamily:"system-ui",color:S.txt2}},"Cancel")
+              )
+            ) : React.createElement("div",{style:{padding:"12px 14px",display:"flex",gap:10,alignItems:"flex-start"}},
+              React.createElement("button",{onClick:function(){toggleTask(t.id);},style:{width:22,height:22,borderRadius:7,flexShrink:0,marginTop:1,border:t.done?"none":"2px solid "+cs.c,background:t.done?cs.c:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:11}},t.done?"✓":""),
+              React.createElement("div",{style:{flex:1,minWidth:0}},
+                React.createElement("div",{style:{fontSize:13,fontWeight:500,color:S.txt,textDecoration:t.done?"line-through":"none",wordBreak:"break-word"}},t.text),
+                React.createElement("div",{style:{display:"flex",gap:6,marginTop:4,flexWrap:"wrap"}},
+                  React.createElement(Badge,{bg:cs.bg,color:cs.c},getCat(t.cat).label),
+                  t.pri==="urgent" && React.createElement(Badge,{bg:S.rbg,color:S.rtx},"Urgent"),
+                  od && React.createElement("span",{style:{fontSize:11,fontWeight:600,color:S.red}},"Overdue"),
+                  t.due!==TD && !od && React.createElement("span",{style:{fontSize:11,color:S.txt3}},fmtD(t.due))
+                )
+              ),
+              React.createElement("div",{style:{display:"flex",gap:4,flexShrink:0}},
+                React.createElement("a",{href:calUrl(t.text,t.due),target:"_blank",rel:"noopener",style:{width:26,height:26,borderRadius:8,background:S.bbg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,textDecoration:"none"}},"📅"),
+                React.createElement("button",{onClick:function(){setEditId(t.id);setEditForm({text:t.text,cat:t.cat,due:t.due,pri:t.pri});},style:{width:26,height:26,borderRadius:8,border:"none",background:S.light,cursor:"pointer",fontSize:11,color:S.txt2,display:"flex",alignItems:"center",justifyContent:"center"}},"✏"),
+                React.createElement("button",{onClick:function(){deleteTask(t.id);},style:{width:26,height:26,borderRadius:8,border:"none",background:S.rbg,cursor:"pointer",fontSize:11,color:S.rtx,display:"flex",alignItems:"center",justifyContent:"center"}},"×")
+              )
+            )
+          );
+        }),
 
-      {/* ══════ PHOTO ══════ */}
-      {tab==="photo"&&<>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
-          {[{l:"Enquiries",n:photos.filter(j=>j.status==="enquiry").length,c:isDark?"#7F77DD":"#534AB7",bg:isDark?"#1F1B3D":"#EEEDFE"},{l:"Booked",n:photos.filter(j=>j.status==="booked").length,c:green,bg:ACTS[0].bg},{l:MO[MI].slice(0,3)+" rev",n:gbp(moRev),c:isDark?"#BA7517":"#854F0B",bg:isDark?"#3D2A06":"#FAEEDA"}].map((s,i)=>(
-            <div key={i} style={{background:s.bg,borderRadius:12,padding:"14px 10px",textAlign:"center"}}>
-              <div style={{fontSize:i===2?15:22,fontWeight:700,color:s.c}}>{s.n}</div>
-              <div style={{fontSize:10,fontWeight:600,color:s.c,opacity:0.8}}>{s.l}</div>
-            </div>
-          ))}
-        </div>
+        // Add buttons
+        !addMode && React.createElement("div",{style:{display:"flex",gap:8,marginTop:4}},
+          React.createElement("button",{onClick:function(){setAddMode(true);},style:{flex:1,padding:12,borderRadius:12,border:"2px dashed "+S.cardBdr,cursor:"pointer",background:"transparent",fontSize:13,fontWeight:600,fontFamily:"system-ui",color:S.txt2}},"+ New task"),
+          React.createElement("button",{onClick:function(){setShowTmpls(!showTmpls);},style:{padding:"12px 16px",borderRadius:12,border:"1px solid "+S.cardBdr,cursor:"pointer",background:"transparent",fontSize:13,fontWeight:600,fontFamily:"system-ui",color:S.txt2}},"Templates")
+        ),
 
-        {stale.length>0&&<div style={{...cd,borderColor:isDark?"#501313":"#F7C1C1",background:isDark?"#2D0F0F":"#FEF2F2"}}>
-          <div style={{padding:"12px 16px"}}><div style={{fontSize:13,fontWeight:600,color:isDark?"#F09595":"#791F1F",marginBottom:6}}>Chase these now</div>
-          {stale.map(j=><div key={j.id} style={{fontSize:13,color:isDark?"#F09595":"#A32D2D",padding:"3px 0"}}>{j.client} — {ago(j.created||j.date)}d</div>)}</div>
-        </div>}
+        // Add form
+        addMode && React.createElement("div",{style:Object.assign({},card,cardPad,{marginTop:8})},
+          React.createElement(Inp,{S:S,value:form.text,onChange:function(e){setForm(function(f){return Object.assign({},f,{text:e.target.value});});},onKeyDown:function(e){if(e.key==="Enter")addTask();},placeholder:"What needs doing?",autoFocus:true,style:{fontSize:14}}),
+          React.createElement("div",{style:{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}},
+            CATS.map(function(c){var cs=getCatS(c.key);return React.createElement("button",{key:c.key,onClick:function(){setForm(function(f){return Object.assign({},f,{cat:c.key});});},style:{padding:"5px 10px",borderRadius:99,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"system-ui",border:form.cat===c.key?"2px solid "+cs.c:"1px solid "+S.cardBdr,background:form.cat===c.key?cs.bg:"transparent",color:form.cat===c.key?cs.c:S.txt2}},c.icon+" "+c.label);})
+          ),
+          React.createElement("div",{style:{display:"flex",gap:8,marginBottom:10}},
+            React.createElement(Inp,{S:S,type:"date",value:form.due,onChange:function(e){setForm(function(f){return Object.assign({},f,{due:e.target.value});});},style:{flex:1}}),
+            React.createElement("button",{onClick:function(){setForm(function(f){return Object.assign({},f,{pri:f.pri==="urgent"?"normal":"urgent"});});},style:{padding:"10px 14px",borderRadius:10,cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"system-ui",border:form.pri==="urgent"?"2px solid "+S.red:"1px solid "+S.cardBdr,background:form.pri==="urgent"?S.rbg:"transparent",color:form.pri==="urgent"?S.rtx:S.txt2}},"Urgent")
+          ),
+          React.createElement("div",{style:{display:"flex",gap:8}},
+            React.createElement("button",{onClick:addTask,style:{flex:1,padding:12,borderRadius:10,border:"none",cursor:"pointer",background:S.green,color:"#fff",fontSize:14,fontWeight:600,fontFamily:"system-ui"}},"Add task"),
+            React.createElement("button",{onClick:function(){setAddMode(false);},style:{padding:"12px 20px",borderRadius:10,border:"1px solid "+S.cardBdr,cursor:"pointer",background:"transparent",fontSize:13,fontFamily:"system-ui",color:S.txt2}},"Cancel")
+          )
+        ),
 
-        {addP?<div style={{...cd,padding:16}}>
-          <div style={{fontSize:14,fontWeight:600,marginBottom:10,color:txt1}}>New job</div>
-          <input value={pf.client} onChange={e=>setPf(f=>({...f,client:e.target.value}))} placeholder="Client name" style={ip} autoFocus/>
-          <input value={pf.location} onChange={e=>setPf(f=>({...f,location:e.target.value}))} placeholder="Location" style={ip}/>
-          <div style={{display:"flex",gap:8,marginBottom:8}}>
-            <input type="date" value={pf.date} onChange={e=>setPf(f=>({...f,date:e.target.value}))} style={{flex:1,padding:10,borderRadius:10,border:`0.5px solid ${bdr}`,fontSize:12,fontFamily:"inherit",outline:"none",background:bg1,color:txt1}}/>
-            <input value={pf.revenue} onChange={e=>setPf(f=>({...f,revenue:e.target.value}))} placeholder="£ fee" type="number" style={{width:80,padding:10,borderRadius:10,border:`0.5px solid ${bdr}`,fontSize:12,fontFamily:"inherit",outline:"none",background:bg1,color:txt1}}/>
-          </div>
-          <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
-            {["enquiry","booked","completed","cancelled"].map(s=>(<button key={s} onClick={()=>setPf(f=>({...f,status:s}))} style={{padding:"6px 12px",borderRadius:20,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",textTransform:"capitalize",border:pf.status===s?`1.5px solid ${isDark?"#7F77DD":"#534AB7"}`:`0.5px solid ${bdr}`,background:pf.status===s?(isDark?"#1F1B3D":"#EEEDFE"):"transparent",color:pf.status===s?(isDark?"#AFA9EC":"#534AB7"):txt2}}>{s}</button>))}
-          </div>
-          <div style={{display:"flex",gap:8}}>
-            <button onClick={()=>{if(!pf.client.trim())return;setPhotos(p=>[{id:uid(),...pf,client:pf.client.trim(),created:TD},...p]);setPf({client:"",date:TD,location:"",status:"enquiry",revenue:""});setAddP(false);}} style={{...bt(isDark?"#7F77DD":"#534AB7","#fff"),flex:1,padding:11}}>Add</button>
-            <button onClick={()=>setAddP(false)} style={{padding:"11px 18px",borderRadius:10,border:`0.5px solid ${bdr}`,cursor:"pointer",background:"transparent",fontSize:13,fontFamily:"inherit",color:txt2}}>Cancel</button>
-          </div>
-        </div>:<button onClick={()=>setAddP(true)} style={{width:"100%",padding:13,borderRadius:14,border:`1.5px dashed ${isDark?"#534AB7":"#AFA9EC"}`,cursor:"pointer",background:"transparent",fontSize:13,fontWeight:600,fontFamily:"inherit",color:isDark?"#7F77DD":"#534AB7",marginBottom:14}}>+ Add job</button>}
+        // ─ GOALS SECTION ─
+        React.createElement("div",{style:{fontSize:16,fontWeight:700,color:S.txt,marginTop:20,marginBottom:10}},"Goals"),
 
-        <div style={cd}>
-          <div style={{...ch,borderBottom:photos.length>0?`0.5px solid ${bdr}`:"none"}}><div style={ctt}>All jobs</div></div>
-          {photos.map((j,i)=>{const sc={enquiry:{bg:isDark?"#1F1B3D":"#EEEDFE",c:isDark?"#AFA9EC":"#3C3489"},booked:{bg:ACTS[0].bg,c:green},completed:{bg:isDark?"#3D2A06":"#FAEEDA",c:isDark?"#FAC775":"#633806"},cancelled:{bg:bg2,c:txt2}}[j.status]||{bg:bg2,c:txt2};return(
-            <div key={j.id} style={{...rw,borderBottom:i<photos.length-1?`0.5px solid ${bdr2}`:"none"}}>
-              <div style={{flex:1}}><div style={{fontSize:13,fontWeight:500,color:txt1}}>{j.client}{j.location?" — "+j.location:""}{j.revenue?" — "+gbp(j.revenue):""}</div><div style={{fontSize:11,color:txt2,marginTop:2}}>{fdt(j.date)}</div></div>
-              <select value={j.status} onChange={e=>setPhotos(p=>p.map(x=>x.id===j.id?{...x,status:e.target.value}:x))} style={{padding:"4px 8px",borderRadius:8,border:`1px solid ${sc.c}30`,background:sc.bg,color:sc.c,fontSize:11,fontWeight:600,fontFamily:"inherit",outline:"none",cursor:"pointer"}}><option value="enquiry">Enquiry</option><option value="booked">Booked</option><option value="completed">Done</option><option value="cancelled">Cancelled</option></select>
-            </div>
-          );})}
-          {photos.length===0&&<div style={{textAlign:"center",padding:"24px 16px",color:txt3,fontSize:13}}>No jobs yet</div>}
-        </div>
-      </>}
+        goals.map(function(g){
+          var statusMap = {"In progress":{bg:S.bbg,c:S.btx},"On hold":{bg:S.abg,c:S.atx},"Almost done":{bg:S.gbg,c:S.gtx},"Done":{bg:S.gbg,c:S.gtx}};
+          var sc = statusMap[g.status] || statusMap["In progress"];
+          return React.createElement("div",{key:g.id,style:card},
+            React.createElement("div",{style:{padding:"12px 14px",display:"flex",justifyContent:"space-between",alignItems:"flex-start"}},
+              React.createElement("div",{style:{flex:1}},
+                React.createElement("div",{style:{fontSize:14,fontWeight:600,color:S.txt,textDecoration:g.status==="Done"?"line-through":"none"}},g.text),
+                g.deadline && React.createElement("div",{style:{fontSize:11,color:S.txt2,marginTop:3}},"Deadline: "+fmtD(g.deadline)),
+                g.notes && React.createElement("div",{style:{fontSize:11,color:S.txt2,marginTop:3}},g.notes)
+              ),
+              React.createElement("div",{style:{display:"flex",gap:6,alignItems:"center",flexShrink:0}},
+                React.createElement("select",{value:g.status,onChange:function(e){updateGoal(g.id,{status:e.target.value});},style:{padding:"4px 8px",borderRadius:8,border:"1px solid "+sc.c+"40",background:sc.bg,color:sc.c,fontSize:11,fontWeight:600,fontFamily:"system-ui",outline:"none",cursor:"pointer"}},
+                  React.createElement("option",{value:"In progress"},"In progress"),
+                  React.createElement("option",{value:"Almost done"},"Almost done"),
+                  React.createElement("option",{value:"On hold"},"On hold"),
+                  React.createElement("option",{value:"Done"},"Done")
+                ),
+                React.createElement("button",{onClick:function(){deleteGoal(g.id);},style:{width:24,height:24,borderRadius:8,border:"none",background:S.rbg,cursor:"pointer",fontSize:11,color:S.rtx,display:"flex",alignItems:"center",justifyContent:"center"}},"×")
+              )
+            )
+          );
+        }),
 
-      {/* ══════ REVIEW ══════ */}
-      {tab==="review"&&<>
-        <div style={{padding:"8px 0 16px",textAlign:"center"}}>
-          <div style={{fontSize:20,fontFamily:"'Playfair Display',serif",color:txt1}}>Weekly review</div>
-        </div>
+        addG ? React.createElement("div",{style:Object.assign({},card,cardPad)},
+          React.createElement(Inp,{S:S,value:gf.text,onChange:function(e){setGf(function(f){return Object.assign({},f,{text:e.target.value});});},placeholder:"Goal (e.g. Get extension done at house)",autoFocus:true}),
+          React.createElement(Inp,{S:S,type:"date",value:gf.deadline,onChange:function(e){setGf(function(f){return Object.assign({},f,{deadline:e.target.value});});},style:{marginBottom:10}}),
+          React.createElement("div",{style:{display:"flex",gap:8}},
+            React.createElement("button",{onClick:addGoal,style:{flex:1,padding:10,borderRadius:10,border:"none",cursor:"pointer",background:S.green,color:"#fff",fontSize:13,fontWeight:600,fontFamily:"system-ui"}},"Add goal"),
+            React.createElement("button",{onClick:function(){setAddG(false);},style:{padding:"10px 14px",borderRadius:10,border:"1px solid "+S.cardBdr,cursor:"pointer",background:"transparent",fontSize:13,fontFamily:"system-ui",color:S.txt2}},"Cancel")
+          )
+        ) : React.createElement("button",{onClick:function(){setAddG(true);},style:{width:"100%",padding:12,borderRadius:12,border:"2px dashed "+S.cardBdr,cursor:"pointer",background:"transparent",fontSize:13,fontWeight:600,fontFamily:"system-ui",color:S.txt2}},"+ Add goal")
+      ),
 
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:14}}>
-          {[{n:doneW,l:"Done",c:green,bg:ACTS[0].bg},{n:missW,l:"Missed",c:missW>0?red:green,bg:missW>0?(isDark?"#501313":"#FCEBEB"):ACTS[0].bg},{n:wkRate+"%",l:"Activity",c:isDark?"#D85A30":"#993C1D",bg:isDark?"#3D1A0A":"#FAECE7"},{n:gbp(moRev),l:"Photo £",c:isDark?"#BA7517":"#854F0B",bg:isDark?"#3D2A06":"#FAEEDA"}].map((s,i)=>(
-            <div key={i} style={{background:s.bg,borderRadius:12,padding:"12px 4px",textAlign:"center"}}>
-              <div style={{fontSize:15,fontWeight:700,color:s.c}}>{s.n}</div>
-              <div style={{fontSize:9,fontWeight:600,color:s.c,opacity:0.8}}>{s.l}</div>
-            </div>
-          ))}
-        </div>
+      // ════════ ACTIVITY TAB ════════
+      tab==="activity" && React.createElement(React.Fragment,null,
 
-        <div style={cd}>
-          <div style={{padding:"14px 16px"}}>
-            <div style={{...ctt,marginBottom:8}}>Activity</div>
-            {wkData.filter(d=>!d.future).map(d=>(
-              <div key={d.date} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0"}}>
-                <span style={{fontSize:11,fontWeight:d.today?700:500,width:28,color:d.today?txt1:txt2}}>{d.day}</span>
-                {d.done.length>0?d.done.map(a=><span key={a.key} style={{fontSize:14}}>{a.icon}</span>):<span style={{fontSize:11,color:txt3}}>—</span>}
-              </div>
-            ))}
-          </div>
-        </div>
+        // Today's activities
+        React.createElement("div",{style:card},
+          React.createElement("div",{style:Object.assign({},cardPad,{borderBottom:"1px solid "+S.cardBdr,display:"flex",justifyContent:"space-between",alignItems:"center"})},
+            React.createElement("div",{style:{fontSize:15,fontWeight:700,color:S.txt}},"Today"),
+            React.createElement(Badge,{bg:todayActs.length===ACTS.length?S.gbg:S.abg,color:todayActs.length===ACTS.length?S.gtx:S.atx},todayActs.length+"/"+ACTS.length)
+          ),
+          React.createElement("div",{style:{padding:"12px 14px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}},
+            ACTS.map(function(a){
+              var done = isAct(a.key);
+              return React.createElement("button",{key:a.key,onClick:function(){tglAct(a.key);},style:{
+                padding:"14px 10px",borderRadius:12,cursor:"pointer",fontFamily:"system-ui",textAlign:"center",
+                border:done?"2px solid "+S.green:"1px solid "+S.cardBdr,
+                background:done?S.gbg:"transparent",color:done?S.gtx:S.txt3,
+                fontSize:13,fontWeight:600,
+              }},
+                React.createElement("div",{style:{fontSize:26,marginBottom:4}},a.icon),
+                a.label,
+                done && React.createElement("div",{style:{fontSize:16,marginTop:4,color:S.green}},"✓")
+              );
+            })
+          ),
+          // Note
+          React.createElement("div",{style:{padding:"8px 14px 14px"}},
+            noteEdit ? React.createElement("div",{style:{display:"flex",gap:8}},
+              React.createElement(Inp,{S:S,value:noteText,onChange:function(e){setNoteText(e.target.value);},placeholder:"How was today? (e.g. heavy sparring session...)",style:{flex:1,marginBottom:0},autoFocus:true}),
+              React.createElement("button",{onClick:function(){if(noteText.trim())upd(function(d){var n=Object.assign({},d.notes);n[TD]=noteText.trim();return{notes:n};});setNoteEdit(false);},style:{padding:"10px 14px",borderRadius:10,border:"none",cursor:"pointer",background:S.green,color:"#fff",fontSize:12,fontWeight:600,fontFamily:"system-ui"}},"Save")
+            ) : React.createElement("button",{onClick:function(){setNoteText(notes[TD]||"");setNoteEdit(true);},style:{fontSize:12,color:notes[TD]?S.txt:S.green,fontWeight:notes[TD]?400:600,background:"none",border:"none",cursor:"pointer",fontFamily:"system-ui",padding:0}},notes[TD]||"+ Add note about today")
+          )
+        ),
 
-        {/* Goals */}
-        <div style={cd}>
-          <div style={ch}><div style={ctt}>Goals</div></div>
-          {goals.map(g=>{const pct=g.target>0?Math.min(Math.round((g.current/g.target)*100),100):0;return(
-            <div key={g.id} style={{padding:"12px 16px",borderBottom:`0.5px solid ${bdr2}`}}>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
-                <span style={{fontSize:13,fontWeight:500,color:txt1}}>{g.text}</span>
-                <span style={{fontSize:12,fontWeight:600,color:pct>=100?green:(isDark?"#7F77DD":"#534AB7")}}>{Math.round(g.current)}/{Math.round(g.target)}</span>
-              </div>
-              <div style={{background:bg2,borderRadius:20,height:6,overflow:"hidden",marginBottom:6}}>
-                <div style={{height:"100%",borderRadius:20,background:pct>=100?green:(isDark?"#7F77DD":"#534AB7"),width:pct+"%"}}/>
-              </div>
-              <input type="range" min="0" max={g.target} value={g.current} onChange={e=>setGoals(p=>p.map(x=>x.id===g.id?{...x,current:parseFloat(e.target.value)||0}:x))} style={{width:"100%"}}/>
-            </div>
-          );})}
-          {addG?<div style={{padding:"12px 16px"}}>
-            <input value={gf.text} onChange={e=>setGf(f=>({...f,text:e.target.value}))} placeholder="Goal (e.g. 50 photo jobs)" style={ip} autoFocus/>
-            <div style={{display:"flex",gap:8}}>
-              <input value={gf.target} onChange={e=>setGf(f=>({...f,target:e.target.value}))} placeholder="Target" type="number" style={{flex:1,padding:10,borderRadius:10,border:`0.5px solid ${bdr}`,fontSize:13,fontFamily:"inherit",outline:"none",background:bg1,color:txt1}}/>
-              <input value={gf.current} onChange={e=>setGf(f=>({...f,current:e.target.value}))} placeholder="Current" type="number" style={{flex:1,padding:10,borderRadius:10,border:`0.5px solid ${bdr}`,fontSize:13,fontFamily:"inherit",outline:"none",background:bg1,color:txt1}}/>
-            </div>
-            <div style={{display:"flex",gap:8,marginTop:8}}>
-              <button onClick={()=>{if(!gf.text.trim()||!gf.target)return;setGoals(p=>[...p,{id:uid(),text:gf.text.trim(),target:parseFloat(gf.target),current:parseFloat(gf.current)||0}]);setGf({text:"",target:"",current:""});setAddG(false);}} style={{...bt(isDark?"#7F77DD":"#534AB7","#fff"),flex:1,padding:10}}>Add</button>
-              <button onClick={()=>setAddG(false)} style={{padding:"10px 14px",borderRadius:10,border:`0.5px solid ${bdr}`,cursor:"pointer",background:"transparent",fontSize:13,fontFamily:"inherit",color:txt2}}>Cancel</button>
-            </div>
-          </div>:<div style={{padding:"10px 16px"}}><button onClick={()=>setAddG(true)} style={{fontSize:12,color:isDark?"#7F77DD":"#534AB7",fontWeight:600,background:"none",border:"none",cursor:"pointer",fontFamily:"inherit"}}>+ Add a goal</button></div>}
-        </div>
+        // Week detail
+        React.createElement("div",{style:card},
+          React.createElement("div",{style:Object.assign({},cardPad,{borderBottom:"1px solid "+S.cardBdr,display:"flex",justifyContent:"space-between",alignItems:"center"})},
+            React.createElement("div",{style:{fontSize:15,fontWeight:700,color:S.txt}},"This week"),
+            React.createElement(Badge,{bg:wkRate>=50?S.gbg:S.abg,color:wkRate>=50?S.gtx:S.atx},wkRate+"%")
+          ),
+          wkData.map(function(d,i){
+            return React.createElement("div",{key:d.date,style:{padding:"10px 14px",display:"flex",alignItems:"center",gap:10,borderBottom:i<6?"1px solid "+S.cardBdr:"none",opacity:d.future?0.3:1}},
+              React.createElement("div",{style:{width:36,textAlign:"center"}},
+                React.createElement("div",{style:{fontSize:10,fontWeight:d.today?700:500,color:d.today?S.txt:S.txt2}},d.day),
+                React.createElement("div",{style:{fontSize:14,fontWeight:700,color:d.today?S.txt:S.txt3}},d.num)
+              ),
+              React.createElement("div",{style:{flex:1,display:"flex",gap:4,flexWrap:"wrap"}},
+                d.done.length>0 ? d.done.map(function(a){return React.createElement(Badge,{key:a.key,bg:S.gbg,color:S.gtx},a.icon+" "+a.label);}) : React.createElement("span",{style:{fontSize:11,color:S.txt3}},d.future?"—":"Rest day")
+              ),
+              d.note && React.createElement("span",{style:{fontSize:10,color:S.txt2,maxWidth:80,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},d.note)
+            );
+          })
+        ),
 
-        {/* AI Review */}
-        <button onClick={genReview} disabled={aiLoad} style={{width:"100%",padding:14,borderRadius:14,border:"none",cursor:"pointer",background:isDark?"#e5e5e5":"#1a1a1a",fontSize:14,fontWeight:600,fontFamily:"inherit",color:isDark?"#0a0a0a":"#fff",marginBottom:10}}>{aiLoad?"Generating...":"AI weekly review"}</button>
-        {aiResult&&<div style={{...cd,padding:"14px 16px"}}><div style={{fontSize:13.5,lineHeight:1.75,color:txt1,whiteSpace:"pre-wrap"}}>{aiResult}</div></div>}
+        // Weight tracker
+        React.createElement("div",{style:card},
+          React.createElement("div",{style:Object.assign({},cardPad,{borderBottom:"1px solid "+S.cardBdr})},
+            React.createElement("div",{style:{fontSize:15,fontWeight:700,color:S.txt}},"Weight tracker"),
+            React.createElement("div",{style:{fontSize:12,color:S.txt2,marginTop:2}},body.length>0?body[0].weight+"kg — "+fmtD(body[0].date):"Track your cut")
+          ),
+          body.length>=2 && React.createElement("div",{style:cardPad},
+            React.createElement("div",{style:{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:8}},
+              React.createElement("span",{style:{color:S.txt2}},"Last "+Math.min(body.length,8)+" entries"),
+              React.createElement("span",{style:{fontWeight:600,color:body[0].weight<body[Math.min(body.length-1,7)].weight?S.green:S.red}},body[0].weight<body[Math.min(body.length-1,7)].weight?"Dropping":"Up")
+            ),
+            React.createElement("div",{style:{display:"flex",alignItems:"flex-end",gap:4,height:60}},
+              body.slice(0,8).reverse().map(function(b,i,a){
+                var mn=Math.min.apply(null,a.map(function(x){return x.weight;}));
+                var mx=Math.max.apply(null,a.map(function(x){return x.weight;}));
+                var rng=mx-mn||1;
+                return React.createElement("div",{key:i,style:{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}},
+                  React.createElement("div",{style:{fontSize:9,color:S.txt2,fontWeight:500}},b.weight),
+                  React.createElement("div",{style:{width:"100%",height:Math.round(8+((b.weight-mn)/rng)*42),borderRadius:4,background:i===a.length-1?S.green:S.gbg}}),
+                  React.createElement("div",{style:{fontSize:8,color:S.txt3}},fmtD(b.date))
+                );
+              })
+            )
+          ),
+          addB ? React.createElement("div",{style:Object.assign({},cardPad,{display:"flex",gap:8,borderTop:"1px solid "+S.cardBdr})},
+            React.createElement(Inp,{S:S,value:bf.weight,onChange:function(e){setBf({weight:e.target.value});},placeholder:"Weight in kg",type:"number",step:"0.1",style:{width:100,marginBottom:0},autoFocus:true}),
+            React.createElement("button",{onClick:addBodyStat,style:{padding:"10px 16px",borderRadius:10,border:"none",cursor:"pointer",background:S.green,color:"#fff",fontSize:12,fontWeight:600,fontFamily:"system-ui"}},"Save"),
+            React.createElement("button",{onClick:function(){setAddB(false);},style:{padding:"10px 12px",borderRadius:10,border:"1px solid "+S.cardBdr,cursor:"pointer",background:"transparent",fontSize:12,fontFamily:"system-ui",color:S.txt2}},"×")
+          ) : React.createElement("div",{style:Object.assign({},cardPad,{borderTop:body.length>=2?"1px solid "+S.cardBdr:"none"})},
+            React.createElement("button",{onClick:function(){setAddB(true);},style:{fontSize:12,color:S.green,fontWeight:600,background:"none",border:"none",cursor:"pointer",fontFamily:"system-ui"}},"+ Log weigh-in")
+          )
+        )
+      ),
 
-        {PROP_APP?<a href={PROP_APP} style={{display:"block",width:"100%",padding:14,borderRadius:14,border:`0.5px solid ${bdr}`,cursor:"pointer",background:bg1,fontSize:14,fontWeight:600,fontFamily:"inherit",color:green,textDecoration:"none",textAlign:"center",boxSizing:"border-box"}}>Open property portfolio app</a>
-        :<button onClick={()=>alert("Set PROP_APP URL in the code")} style={{width:"100%",padding:14,borderRadius:14,border:`0.5px solid ${bdr}`,cursor:"pointer",background:bg1,fontSize:14,fontWeight:600,fontFamily:"inherit",color:green}}>Open property portfolio app</button>}
-      </>}
+      // ════════ PHOTO TAB ════════
+      tab==="photo" && React.createElement(React.Fragment,null,
+        React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:12}},
+          [{l:"Enquiries",n:photos.filter(function(j){return j.status==="enquiry";}).length,bg:S.bbg,c:S.btx},
+           {l:"Booked",n:photos.filter(function(j){return j.status==="booked";}).length,bg:S.gbg,c:S.gtx},
+           {l:MO[MI].slice(0,3)+" revenue",n:gbp(moRev),bg:S.abg,c:S.atx}].map(function(s,i){
+            return React.createElement("div",{key:i,style:{background:s.bg,borderRadius:12,padding:"12px 8px",textAlign:"center"}},
+              React.createElement("div",{style:{fontSize:i===2?14:20,fontWeight:700,color:s.c}},s.n),
+              React.createElement("div",{style:{fontSize:10,fontWeight:600,color:s.c,opacity:0.8}},s.l)
+            );
+          })
+        ),
 
-      <div style={{textAlign:"center",padding:"24px 0",fontSize:11,color:txt3}}>Ash's Daily HQ</div>
-    </div>
+        stale.length>0 && React.createElement("div",{style:Object.assign({},card,{background:S.rbg,borderColor:S.rtx+"40"})},
+          React.createElement("div",{style:cardPad},
+            React.createElement("div",{style:{fontSize:13,fontWeight:600,color:S.rtx,marginBottom:6}},"Chase these now — "+stale.length+" going cold"),
+            stale.map(function(j){return React.createElement("div",{key:j.id,style:{fontSize:13,color:S.rtx,padding:"3px 0"}},j.client+" — "+ago(j.created||j.date)+" days old");})
+          )
+        ),
+
+        addP ? React.createElement("div",{style:Object.assign({},card,cardPad)},
+          React.createElement("div",{style:{fontSize:14,fontWeight:700,color:S.txt,marginBottom:10}},"New job"),
+          React.createElement(Inp,{S:S,value:pf.client,onChange:function(e){setPf(function(f){return Object.assign({},f,{client:e.target.value});});},placeholder:"Client name",autoFocus:true}),
+          React.createElement(Inp,{S:S,value:pf.location,onChange:function(e){setPf(function(f){return Object.assign({},f,{location:e.target.value});});},placeholder:"Location"}),
+          React.createElement("div",{style:{display:"flex",gap:8,marginBottom:8}},
+            React.createElement(Inp,{S:S,type:"date",value:pf.date,onChange:function(e){setPf(function(f){return Object.assign({},f,{date:e.target.value});});},style:{flex:1}}),
+            React.createElement(Inp,{S:S,type:"number",value:pf.revenue,onChange:function(e){setPf(function(f){return Object.assign({},f,{revenue:e.target.value});});},placeholder:"£ fee",style:{width:90}})
+          ),
+          React.createElement("div",{style:{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}},
+            ["enquiry","booked","completed","cancelled"].map(function(s){
+              var active = pf.status===s;
+              return React.createElement("button",{key:s,onClick:function(){setPf(function(f){return Object.assign({},f,{status:s});});},style:{padding:"6px 12px",borderRadius:99,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"system-ui",textTransform:"capitalize",border:active?"2px solid "+S.btx:"1px solid "+S.cardBdr,background:active?S.bbg:"transparent",color:active?S.btx:S.txt2}},s);
+            })
+          ),
+          React.createElement("div",{style:{display:"flex",gap:8}},
+            React.createElement("button",{onClick:addPhoto,style:{flex:1,padding:10,borderRadius:10,border:"none",cursor:"pointer",background:S.blue,color:"#fff",fontSize:13,fontWeight:600,fontFamily:"system-ui"}},"Add job"),
+            React.createElement("button",{onClick:function(){setAddP(false);},style:{padding:"10px 14px",borderRadius:10,border:"1px solid "+S.cardBdr,cursor:"pointer",background:"transparent",fontSize:13,fontFamily:"system-ui",color:S.txt2}},"Cancel")
+          )
+        ) : React.createElement("button",{onClick:function(){setAddP(true);},style:{width:"100%",padding:12,borderRadius:12,border:"2px dashed "+S.btx+"60",cursor:"pointer",background:"transparent",fontSize:13,fontWeight:600,fontFamily:"system-ui",color:S.btx,marginBottom:10}},"+ Add photography job"),
+
+        React.createElement("div",{style:card},
+          React.createElement("div",{style:Object.assign({},cardPad,{borderBottom:photos.length?"1px solid "+S.cardBdr:"none",display:"flex",justifyContent:"space-between"})},
+            React.createElement("div",{style:{fontSize:15,fontWeight:700,color:S.txt}},"All jobs"),
+            photos.filter(function(j){return j.status==="completed";}).length>0 && React.createElement("span",{style:{fontSize:12,color:S.atx,fontWeight:600}},"Total: "+gbp(photos.filter(function(j){return j.status==="completed";}).reduce(function(s,j){return s+(parseFloat(j.revenue)||0);},0)))
+          ),
+          photos.map(function(j,i){
+            var statusColors = {enquiry:{bg:S.bbg,c:S.btx},booked:{bg:S.gbg,c:S.gtx},completed:{bg:S.abg,c:S.atx},cancelled:{bg:S.light,c:S.gray}};
+            var sc = statusColors[j.status] || statusColors.enquiry;
+            return React.createElement("div",{key:j.id,style:{padding:"10px 14px",display:"flex",gap:10,alignItems:"center",borderBottom:i<photos.length-1?"1px solid "+S.cardBdr:"none"}},
+              React.createElement("div",{style:{flex:1}},
+                React.createElement("div",{style:{fontSize:13,fontWeight:500,color:S.txt}},j.client+(j.location?" — "+j.location:"")+(j.revenue?" — "+gbp(j.revenue):"")),
+                React.createElement("div",{style:{fontSize:11,color:S.txt2,marginTop:2}},fmtD(j.date))
+              ),
+              React.createElement("select",{value:j.status,onChange:function(e){updatePhotoStatus(j.id,e.target.value);},style:{padding:"4px 8px",borderRadius:8,border:"1px solid "+sc.c+"40",background:sc.bg,color:sc.c,fontSize:11,fontWeight:600,fontFamily:"system-ui",outline:"none",cursor:"pointer"}},
+                React.createElement("option",{value:"enquiry"},"Enquiry"),
+                React.createElement("option",{value:"booked"},"Booked"),
+                React.createElement("option",{value:"completed"},"Done"),
+                React.createElement("option",{value:"cancelled"},"Cancelled")
+              )
+            );
+          }),
+          photos.length===0 && React.createElement("div",{style:{padding:"20px 14px",textAlign:"center",color:S.txt3,fontSize:13}},"No jobs yet")
+        )
+      ),
+
+      // ════════ REVIEW TAB ════════
+      tab==="review" && React.createElement(React.Fragment,null,
+        React.createElement("div",{style:{textAlign:"center",marginBottom:14}},
+          React.createElement("div",{style:{fontSize:18,fontWeight:700,color:S.txt}},"Weekly Review")
+        ),
+
+        React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:12}},
+          [{n:doneW,l:"Done",bg:S.gbg,c:S.gtx},
+           {n:missW,l:"Missed",bg:missW>0?S.rbg:S.gbg,c:missW>0?S.rtx:S.gtx},
+           {n:wkRate+"%",l:"Activity",bg:S.abg,c:S.atx},
+           {n:gbp(moRev),l:"Photo £",bg:S.bbg,c:S.btx}].map(function(s,i){
+            return React.createElement("div",{key:i,style:{background:s.bg,borderRadius:12,padding:"12px 4px",textAlign:"center"}},
+              React.createElement("div",{style:{fontSize:15,fontWeight:700,color:s.c}},s.n),
+              React.createElement("div",{style:{fontSize:9,fontWeight:600,color:s.c,opacity:0.8}},s.l)
+            );
+          })
+        ),
+
+        // Activity summary
+        React.createElement("div",{style:card},
+          React.createElement("div",{style:Object.assign({},cardPad)},
+            React.createElement("div",{style:{fontSize:15,fontWeight:700,color:S.txt,marginBottom:8}},"Activity this week"),
+            wkData.filter(function(d){return !d.future;}).map(function(d){
+              return React.createElement("div",{key:d.date,style:{display:"flex",alignItems:"center",gap:8,padding:"5px 0"}},
+                React.createElement("span",{style:{fontSize:11,fontWeight:d.today?700:500,width:28,color:d.today?S.txt:S.txt2}},d.day),
+                d.done.length>0 ? d.done.map(function(a){return React.createElement("span",{key:a.key,style:{fontSize:14}},a.icon);}) : React.createElement("span",{style:{fontSize:11,color:S.txt3}},"—"),
+                d.note && React.createElement("span",{style:{fontSize:10,color:S.txt2,marginLeft:"auto"}},d.note)
+              );
+            })
+          )
+        ),
+
+        // AI Review
+        React.createElement(Btn,{S:S,onClick:genReview,disabled:aiLoad,style:{background:aiLoad?S.light:S.dark,color:aiLoad?S.gray:"#fff"}},aiLoad?"Generating review...":"Generate AI weekly review"),
+
+        aiRes && React.createElement("div",{style:Object.assign({},card,cardPad)},
+          React.createElement("div",{style:{fontSize:13,lineHeight:1.8,color:S.txt,whiteSpace:"pre-wrap"}},aiRes)
+        ),
+
+        // Property link
+        React.createElement("a",{href:PROP_APP||"#",onClick:PROP_APP?undefined:function(e){e.preventDefault();},style:{display:"block",padding:14,borderRadius:12,border:"1px solid "+S.cardBdr,cursor:"pointer",background:S.cardBg,fontSize:14,fontWeight:600,fontFamily:"system-ui",color:S.green,textDecoration:"none",textAlign:"center"}},"Open property portfolio app")
+      )
+    ),
+
+    // Footer
+    React.createElement("div",{style:{textAlign:"center",padding:"16px",fontSize:11,color:S.txt3}},"Ash's Daily HQ")
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App,null));
   </script>
 </body>
 </html>
