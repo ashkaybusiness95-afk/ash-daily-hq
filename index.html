@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0a0a0a">
+  <title>Ash Daily HQ</title>
+  <link rel="manifest" href="data:application/json,{%22name%22:%22Ash%20Daily%20HQ%22,%22short_name%22:%22Daily%20HQ%22,%22start_url%22:%22.%22,%22display%22:%22standalone%22,%22background_color%22:%22%230a0a0a%22,%22theme_color%22:%22%230F6E56%22}">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'DM Sans',system-ui,-apple-system,sans-serif;background:#f8f8f6;color:#1a1a1a;-webkit-tap-highlight-color:transparent}
+    input,select,button,textarea{font-family:inherit}
+    @media(prefers-color-scheme:dark){body{background:#0a0a0a;color:#e5e5e5}}
+  </style>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="root"></div>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script type="text/babel">
+const {useState, useEffect, useRef} = React;
+
+firebase.initializeApp({
+  apiKey:"AIzaSyAaxhoM0O6seClznekYK71iQhC_WoFdrsQ",
+  authDomain:"ash-property-app.firebaseapp.com",
+  projectId:"ash-property-app",
+  storageBucket:"ash-property-app.firebasestorage.app",
+  messagingSenderId:"170227737480",
+  appId:"1:170227737480:web:523be104809c515783d03d"
+});
+const db = firebase.firestore();
+const PASS = "AshHQ2026";
+const PROP_APP = ""; // Put your property app URL here
+const AUTH_KEY = "ash-hq-auth";
+
+/* ═══ Helpers ═══ */
+const N=new Date(),TD=N.toISOString().split("T")[0],DN=N.getDate(),MI=N.getMonth(),YR=N.getFullYear();
+const DAYS_F=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+const DAYS_S=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const MO=["January","February","March","April","May","June","July","August","September","October","November","December"];
+const MK=YR+"-"+String(MI+1).padStart(2,"0");
+const greet=()=>{const h=N.getHours();return h<12?"Morning":h<17?"Afternoon":"Evening";};
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const gbp=n=>"£"+Math.round(Math.abs(n)).toLocaleString();
+const ago=ds=>Math.floor((N-new Date(ds))/864e5);
+const fdt=ds=>{const d=new Date(ds);return d.getDate()+" "+MO[d.getMonth()].slice(0,3);};
+const isDark=window.matchMedia&&window.matchMedia("(prefers-color-scheme:dark)").matches;
+
+function weekDates(){
+  const d=new Date(N),day=d.getDay(),mon=new Date(d);
+  mon.setDate(d.getDate()-((day+6)%7));
+  return Array.from({length:7},(_,i)=>{const dd=new Date(mon);dd.setDate(mon.getDate()+i);return dd.toISOString().split("T")[0];});
+}
+const WK=weekDates();
+
+/* ═══ Config ═══ */
+const ACTS=[
+  {key:"steps",label:"10k steps",icon:"🚶",color:"#0F6E56",bg:isDark?"#0F3D2E":"#E1F5EE"},
+  {key:"gym",label:"Gym / Boxing",icon:"🥊",color:isDark?"#D85A30":"#993C1D",bg:isDark?"#3D1A0A":"#FAECE7"},
+  {key:"read",label:"Read",icon:"📖",color:isDark?"#7F77DD":"#534AB7",bg:isDark?"#1F1B3D":"#EEEDFE"},
+  {key:"bike",label:"30 min bike",icon:"🚴",color:isDark?"#378ADD":"#185FA5",bg:isDark?"#0C2440":"#E6F1FB"},
+];
+
+const CATS=[
+  {key:"property",label:"Property",icon:"🏠",c:"#0F6E56",bg:isDark?"#0F3D2E":"#E1F5EE",dk:isDark?"#5DCAA5":"#085041"},
+  {key:"photo",label:"Photo",icon:"📷",c:isDark?"#7F77DD":"#534AB7",bg:isDark?"#1F1B3D":"#EEEDFE",dk:isDark?"#AFA9EC":"#3C3489"},
+  {key:"fitness",label:"Fitness",icon:"🥊",c:isDark?"#D85A30":"#993C1D",bg:isDark?"#3D1A0A":"#FAECE7",dk:isDark?"#F0997B":"#712B13"},
+  {key:"personal",label:"Personal",icon:"👤",c:isDark?"#378ADD":"#185FA5",bg:isDark?"#0C2440":"#E6F1FB",dk:isDark?"#85B7EB":"#0C447C"},
+];
+
+const TMPLS=[
+  {text:"Check all rent payments",cat:"property"},
+  {text:"Chase late rent",cat:"property"},
+  {text:"Review compliance dates",cat:"property"},
+  {text:"Property inspections",cat:"property"},
+  {text:"Post on photo socials",cat:"photo"},
+  {text:"Follow up enquiries",cat:"photo"},
+  {text:"Update website",cat:"photo"},
+  {text:"Review finances",cat:"personal"},
+];
+
+const TABS=[
+  {key:"today",label:"Today",icon:"☀"},
+  {key:"tasks",label:"Tasks",icon:"✓"},
+  {key:"activity",label:"Activity",icon:"🏃"},
+  {key:"photo",label:"Photo",icon:"📷"},
+  {key:"review",label:"Review",icon:"📊"},
+];
+
+/* ═══ Theme ═══ */
+const bg1=isDark?"#141414":"#fff";
+const bg2=isDark?"#1c1c1c":"#f5f5f3";
+const bg3=isDark?"#0a0a0a":"#f8f8f6";
+const bdr=isDark?"rgba(255,255,255,0.08)":"#e5e5e5";
+const bdr2=isDark?"rgba(255,255,255,0.04)":"#f0f0f0";
+const txt1=isDark?"#e5e5e5":"#1a1a1a";
+const txt2=isDark?"#888":"#888";
+const txt3=isDark?"#555":"#bbb";
+const red="#E24B4A";const green="#0F6E56";
+
+/* ═══ Styles ═══ */
+const cd={background:bg1,border:`0.5px solid ${bdr}`,borderRadius:16,overflow:"hidden",marginBottom:12};
+const ch={padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:`0.5px solid ${bdr}`};
+const ctt={fontSize:15,fontWeight:600,color:txt1};
+const css={fontSize:12,color:txt2,marginTop:2};
+const pl=(bg,c)=>({display:"inline-block",fontSize:11,fontWeight:600,color:c,background:bg,padding:"3px 10px",borderRadius:20});
+const bt=(bg,c)=>({padding:"8px 16px",borderRadius:10,border:"none",cursor:"pointer",background:bg,color:c,fontSize:13,fontWeight:600,fontFamily:"inherit"});
+const rw={padding:"12px 16px",display:"flex",gap:10,alignItems:"center",borderBottom:`0.5px solid ${bdr2}`};
+const ip={width:"100%",padding:"11px 14px",borderRadius:12,border:`0.5px solid ${bdr}`,fontSize:13,fontFamily:"inherit",outline:"none",marginBottom:8,boxSizing:"border-box",background:bg1,color:txt1};
+
+/* ═══ Firebase helpers ═══ */
+const DOC=db.collection("dailyhq").doc("ash");
+
+async function loadData(){
+  try{const snap=await DOC.get();return snap.exists?snap.data():null;}catch(e){console.error(e);return null;}
+}
+
+async function saveData(data){
+  try{await DOC.set(data,{merge:true});}catch(e){console.error(e);}
+}
+
+/* ═══ Voice ═══ */
+function speak(text){
+  if(!window.speechSynthesis)return;
+  window.speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(text.replace(/[☀📰📋🏠🥊📷⚠💪🚶📖🚴🏃]/g,"").replace(/\n+/g,". "));
+  u.lang="en-GB";u.rate=1;
+  window.speechSynthesis.speak(u);
+}
+
+/* ═══ AI Call ═══ */
+async function callAI(apiKey, system, prompt){
+  const r=await fetch("https://api.anthropic.com/v1/messages",{
+    method:"POST",
+    headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+    body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:800,system:system,messages:[{role:"user",content:prompt}]})
+  });
+  const d=await r.json();
+  return d.content?d.content.map(c=>c.text||"").join(""):"Error — check your API key.";
+}
+
+/* ═══════════════ MAIN APP ═══════════════ */
+function App(){
+  const[auth,setAuth]=useState(()=>localStorage.getItem(AUTH_KEY)==="true");
+  const[pw,setPw]=useState("");
+
+  if(!auth)return(
+    <div style={{maxWidth:400,margin:"0 auto",padding:"80px 24px",textAlign:"center"}}>
+      <div style={{fontSize:32,marginBottom:8}}>🔒</div>
+      <div style={{fontSize:22,fontFamily:"'Playfair Display',serif",color:txt1,marginBottom:4}}>Ash's Daily HQ</div>
+      <div style={{fontSize:13,color:txt2,marginBottom:24}}>Enter password to continue</div>
+      <input value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&pw===PASS){localStorage.setItem(AUTH_KEY,"true");setAuth(true);}}} type="password" placeholder="Password" style={{...ip,textAlign:"center",fontSize:16,maxWidth:240,margin:"0 auto"}}/>
+      <button onClick={()=>{if(pw===PASS){localStorage.setItem(AUTH_KEY,"true");setAuth(true);}}} style={{...bt(green,"#fff"),padding:"12px 40px",marginTop:8}}>Enter</button>
+    </div>
+  );
+
+  return <HQ/>;
+}
+
+function HQ(){
+  const[tab,setTab]=useState("today");
+  const[ok,setOk]=useState(false);
+
+  // Data
+  const[tasks,setTasks]=useState([]);
+  const[acts,setActs]=useState({});
+  const[notes,setNotes]=useState({});
+  const[photos,setPhotos]=useState([]);
+  const[body,setBody]=useState([]);
+  const[goals,setGoals]=useState([]);
+  const[apiKey,setApiKey]=useState(()=>localStorage.getItem("ash-hq-apikey")||"");
+
+  // UI
+  const[brief,setBrief]=useState(null);
+  const[bLoad,setBLoad]=useState(false);
+  const[spk,setSpk]=useState(false);
+  const[add,setAdd]=useState(false);
+  const[form,setForm]=useState({text:"",cat:"property",due:TD,pri:"normal"});
+  const[flt,setFlt]=useState("all");
+  const[vm,setVm]=useState("today");
+  const[addP,setAddP]=useState(false);
+  const[pf,setPf]=useState({client:"",date:TD,location:"",status:"enquiry",revenue:""});
+  const[addB,setAddB]=useState(false);
+  const[bf,setBf]=useState({weight:""});
+  const[addG,setAddG]=useState(false);
+  const[gf,setGf]=useState({text:"",target:"",current:""});
+  const[tmpls,setTmpls]=useState(false);
+  const[noteEdit,setNoteEdit]=useState(false);
+  const[noteText,setNoteText]=useState("");
+  const[showKey,setShowKey]=useState(false);
+  const[keyInput,setKeyInput]=useState("");
+  const[aiResult,setAiResult]=useState("");
+  const[aiLoad,setAiLoad]=useState(false);
+
+  // Load from Firebase
+  useEffect(()=>{
+    loadData().then(d=>{
+      if(d){
+        d.tasks&&setTasks(d.tasks);
+        d.acts&&setActs(d.acts);
+        d.notes&&setNotes(d.notes);
+        d.photos&&setPhotos(d.photos);
+        d.body&&setBody(d.body);
+        d.goals&&setGoals(d.goals);
+      }
+      setOk(true);
+    });
+  },[]);
+
+  // Save to Firebase
+  useEffect(()=>{
+    if(ok)saveData({tasks,acts,notes,photos,body,goals});
+  },[tasks,acts,notes,photos,body,goals,ok]);
+
+  useEffect(()=>()=>{window.speechSynthesis&&window.speechSynthesis.cancel();},[]);
+
+  /* ─ Activity ─ */
+  const tglAct=(k,d)=>{const key=k+"-"+(d||TD);setActs(p=>{const n={...p};n[key]?delete n[key]:n[key]=true;return n;});};
+  const isAct=(k,d)=>!!acts[k+"-"+(d||TD)];
+  const todayActs=ACTS.filter(a=>isAct(a.key));
+
+  /* ─ Tasks ─ */
+  const todayTasks=tasks.filter(t=>t.due===TD&&!t.done);
+  const overdueTasks=tasks.filter(t=>t.due<TD&&!t.done);
+  const allToday=[...overdueTasks,...todayTasks];
+  const overdueC=overdueTasks.length;
+  const doAdd=()=>{if(!form.text.trim())return;setTasks(p=>[{id:uid(),text:form.text.trim(),cat:form.cat,due:form.due,pri:form.pri,done:false,created:TD},...p]);setForm({text:"",cat:"property",due:TD,pri:"normal"});setAdd(false);};
+  const getCat=k=>CATS.find(c=>c.key===k)||CATS[0];
+  const filtTasks=tasks.filter(t=>{if(vm==="today")return t.due===TD;if(vm==="upcoming")return t.due>TD&&!t.done;if(vm==="overdue")return t.due<TD&&!t.done;if(vm==="done")return t.done;return true;}).filter(t=>flt==="all"||t.cat===flt);
+
+  /* ─ Photos ─ */
+  const stale=photos.filter(j=>j.status==="enquiry"&&ago(j.created||j.date)>=3);
+  const moRev=photos.filter(j=>j.status==="completed"&&j.date&&j.date.startsWith(MK)).reduce((s,j)=>s+(parseFloat(j.revenue)||0),0);
+
+  /* ─ Week ─ */
+  const wkData=WK.map(d=>{const dt=new Date(d);return{date:d,day:DAYS_S[dt.getDay()],num:dt.getDate(),done:ACTS.filter(a=>isAct(a.key,d)),note:notes[d]||"",today:d===TD,future:d>TD};});
+  const wkRate=Math.round((wkData.reduce((s,d)=>s+d.done.length,0)/(ACTS.length*7))*100);
+
+  /* ─ Review ─ */
+  const lwT=tasks.filter(t=>{const d=(N-new Date(t.due))/864e5;return d>=0&&d<7;});
+  const doneW=lwT.filter(t=>t.done).length;
+  const missW=lwT.filter(t=>!t.done&&t.due<TD).length;
+
+  /* ─ Voice ─ */
+  const doSpk=()=>{
+    if(spk){window.speechSynthesis.cancel();setSpk(false);}
+    else if(brief){setSpk(true);speak(brief);const iv=setInterval(()=>{if(!window.speechSynthesis.speaking){setSpk(false);clearInterval(iv);}},500);}
+  };
+
+  /* ─ AI Briefing ─ */
+  const genBrief=async()=>{
+    if(!apiKey){setBrief("Add your API key first — tap the key icon below.");return;}
+    setBLoad(true);
+    try{
+      const ctx=`Date: ${DAYS_F[N.getDay()]} ${DN} ${MO[MI]} ${YR}
+Tasks: ${todayTasks.map(t=>t.text).join(", ")||"None"} | Overdue: ${overdueTasks.map(t=>t.text).join(", ")||"None"}
+Activity: ${todayActs.map(a=>a.label).join(", ")||"Nothing yet"} | Week rate: ${wkRate}%
+Photo: ${photos.filter(j=>j.status==="booked").length} booked, ${stale.length} stale, ${gbp(moRev)} rev
+${body.length>0?`Weight: ${body[0].weight}kg`:""}
+Portfolio: 8 properties, £498k equity`;
+      const txt=await callAI(apiKey,
+        `You're Ash's AI. He has 8 rental properties in Leeds/Bradford, a photography business, trains boxing/weights/cycling, cutting fat. SHORT punchy morning briefing — under 180 words, conversational (read aloud): ☀ WEATHER Leeds ☁ 📰 NEWS 2-3 UK headlines 📋 TODAY tasks+activity 📷 PHOTO bookings 💪 CLOSER one line coach energy`,
+        `Briefing:\n${ctx}`
+      );
+      setBrief(txt);
+    }catch(e){setBrief("Connection error — check your API key and internet.");}
+    setBLoad(false);
+  };
+
+  /* ─ AI Review ─ */
+  const genReview=async()=>{
+    if(!apiKey){setAiResult("Add your API key first.");return;}
+    setAiLoad(true);
+    try{
+      const ctx=`Tasks: ${doneW} done, ${missW} missed\nActivity ${wkRate}%:\n${wkData.filter(d=>!d.future).map(d=>`${d.day}: ${d.done.map(a=>a.label).join(",")||"rest"}${d.note?" — "+d.note:""}`).join("\n")}\n${body.length>0?`Weight: ${body[0].weight}kg`:""}\nPhoto: ${photos.filter(j=>j.status==="enquiry").length} enquiries, ${photos.filter(j=>j.status==="booked").length} booked, ${gbp(moRev)} rev\n${goals.length>0?`Goals: ${goals.map(g=>`${g.text} ${Math.round(g.current)}/${Math.round(g.target)}`).join(", ")}`:""}`;
+      const txt=await callAI(apiKey,
+        "Brutally honest weekly review for Ash (property investor, photographer, trains boxing/weights/cycling, cutting fat). What went well, what didn't. Specific day-by-day plan for next week. Under 300 words. Direct, no fluff.",
+        ctx
+      );
+      setAiResult(txt);
+    }catch{setAiResult("Connection error.");}
+    setAiLoad(false);
+  };
+
+  if(!ok)return <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh"}}><p style={{color:txt2,fontSize:14}}>Loading...</p></div>;
+
+  return(
+    <div style={{maxWidth:520,margin:"0 auto",padding:"0 16px 100px"}}>
+
+      {/* Header */}
+      <div style={{padding:"28px 0 16px",display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
+        <div>
+          <p style={{fontSize:11,color:txt2,fontWeight:600,margin:0,letterSpacing:1.5,textTransform:"uppercase"}}>{DAYS_F[N.getDay()]} {DN} {MO[MI]}</p>
+          <h1 style={{fontSize:28,fontFamily:"'Playfair Display',serif",fontWeight:500,margin:"4px 0 0",color:txt1,letterSpacing:"-0.5px"}}>{greet()}, Ash</h1>
+        </div>
+        <div style={{display:"flex",gap:6}}>
+          {overdueC>0&&<span style={pl(isDark?"#501313":"#FCEBEB",isDark?"#F09595":"#791F1F")}>{overdueC} overdue</span>}
+          <span style={pl(todayActs.length===ACTS.length?ACTS[0].bg:(isDark?"#3D2A06":"#FAEEDA"),todayActs.length===ACTS.length?ACTS[0].color:(isDark?"#FAC775":"#633806"))}>{todayActs.length}/{ACTS.length}</span>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{display:"flex",gap:2,marginBottom:18,overflowX:"auto",background:bg2,borderRadius:14,padding:3}}>
+        {TABS.map(t=>(
+          <button key={t.key} onClick={()=>setTab(t.key)} style={{flex:1,padding:"9px 2px",borderRadius:12,border:"none",cursor:"pointer",background:tab===t.key?bg1:"transparent",color:tab===t.key?txt1:txt2,fontSize:10,fontWeight:600,fontFamily:"inherit",whiteSpace:"nowrap",boxShadow:tab===t.key?"0 1px 4px rgba(0,0,0,0.08)":"none"}}>{t.icon}<br/>{t.label}</button>
+        ))}
+      </div>
+
+      {/* ══════ TODAY ══════ */}
+      {tab==="today"&&<>
+        {/* Property app link */}
+        {PROP_APP&&<a href={PROP_APP} style={{display:"block",width:"100%",padding:"16px",borderRadius:14,border:"none",cursor:"pointer",background:green,color:"#fff",fontSize:15,fontWeight:600,fontFamily:"inherit",marginBottom:12,textDecoration:"none",boxSizing:"border-box"}}>
+          <span style={{fontSize:20,marginRight:8}}>🏠</span> Property portfolio →
+        </a>}
+        {!PROP_APP&&<button onClick={()=>alert("Set PROP_APP URL in the code to link to your property app")} style={{width:"100%",padding:"16px",borderRadius:14,border:"none",cursor:"pointer",background:green,color:"#fff",fontSize:15,fontWeight:600,fontFamily:"inherit",marginBottom:12,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:20}}>🏠</span><div style={{textAlign:"left"}}><div>Property portfolio</div><div style={{fontSize:11,fontWeight:400,opacity:0.8}}>Rents, tenants, compliance</div></div></div><span>→</span>
+        </button>}
+
+        {/* Today's tasks */}
+        <div style={cd}>
+          <div style={ch}>
+            <div><div style={ctt}>Today's tasks</div><div style={css}>{allToday.length} to do</div></div>
+            <button onClick={()=>{setTab("tasks");setAdd(true);}} style={bt(green,"#fff")}>+ Add</button>
+          </div>
+          {allToday.length===0&&<div style={{padding:"24px 16px",textAlign:"center",color:txt3,fontSize:13}}>Nothing scheduled — add a task or use templates</div>}
+          {allToday.map((t,i)=>{const c=getCat(t.cat);const od=t.due<TD;return(
+            <div key={t.id} style={{...rw,borderBottom:i<allToday.length-1?`0.5px solid ${bdr2}`:"none"}}>
+              <button onClick={()=>setTasks(p=>p.map(x=>x.id===t.id?{...x,done:true}:x))} style={{width:24,height:24,borderRadius:8,flexShrink:0,border:`2px solid ${od?red:c.c}`,background:"transparent",cursor:"pointer"}}/>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:13.5,fontWeight:500,color:txt1}}>{t.text}</div>
+                <div style={{display:"flex",gap:6,marginTop:3}}>
+                  <span style={pl(c.bg,c.dk)}>{c.label}</span>
+                  {t.pri==="urgent"&&<span style={pl(isDark?"#501313":"#FCEBEB",isDark?"#F09595":"#791F1F")}>Urgent</span>}
+                  {od&&<span style={{fontSize:11,fontWeight:600,color:red}}>Overdue</span>}
+                </div>
+              </div>
+            </div>
+          );})}
+          <div style={{padding:"10px 16px 14px",display:"flex",gap:6,overflowX:"auto"}}>
+            {TMPLS.slice(0,3).map((t,i)=>(
+              <button key={i} onClick={()=>setTasks(p=>[{id:uid(),text:t.text,cat:t.cat,due:TD,pri:"normal",done:false,created:TD},...p])} style={{padding:"6px 12px",borderRadius:20,border:`0.5px solid ${bdr}`,cursor:"pointer",background:"transparent",fontSize:11,fontWeight:500,fontFamily:"inherit",color:txt2,whiteSpace:"nowrap"}}>+ {t.text}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* Goals */}
+        {goals.length>0&&<div style={cd}>
+          <div style={{padding:"14px 16px"}}>
+            <div style={{...ctt,marginBottom:10}}>Goals</div>
+            {goals.map(g=>{const pct=g.target>0?Math.min(Math.round((g.current/g.target)*100),100):0;return(
+              <div key={g.id} style={{marginBottom:12}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                  <span style={{fontSize:13,fontWeight:500,color:txt1}}>{g.text}</span>
+                  <span style={{fontSize:12,fontWeight:600,color:pct>=100?green:(isDark?"#7F77DD":"#534AB7")}}>{pct}%</span>
+                </div>
+                <div style={{background:bg2,borderRadius:20,height:8,overflow:"hidden"}}>
+                  <div style={{height:"100%",borderRadius:20,background:pct>=100?green:(isDark?"#7F77DD":"#534AB7"),width:pct+"%",transition:"width 0.3s"}}/>
+                </div>
+              </div>
+            );})}
+          </div>
+        </div>}
+
+        {/* Activity */}
+        <div style={cd}>
+          <div style={{padding:"14px 16px"}}>
+            <div style={{...ctt,marginBottom:10}}>Activity</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              {ACTS.map(a=>{const done=isAct(a.key);return(
+                <button key={a.key} onClick={()=>tglAct(a.key)} style={{padding:"10px",borderRadius:12,cursor:"pointer",fontFamily:"inherit",border:done?`1.5px solid ${a.color}`:`0.5px solid ${bdr}`,background:done?a.bg:"transparent",color:done?a.color:txt3,fontSize:12,fontWeight:600,textAlign:"center",transition:"all 0.15s"}}>
+                  <span style={{fontSize:20}}>{a.icon}</span> {a.label} {done?"✓":""}
+                </button>
+              );})}
+            </div>
+          </div>
+        </div>
+
+        {/* Week grid */}
+        <div style={cd}>
+          <div style={{padding:"14px 16px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+              <div style={ctt}>This week</div>
+              <span style={pl(isDark?"#1F1B3D":"#EEEDFE",isDark?"#AFA9EC":"#3C3489")}>{wkRate}%</span>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
+              {wkData.map(d=>(
+                <div key={d.date} style={{textAlign:"center",opacity:d.future?0.3:1}}>
+                  <div style={{fontSize:9,color:d.today?txt1:txt2,fontWeight:d.today?700:500,marginBottom:3}}>{d.day}</div>
+                  <div style={{width:32,height:32,borderRadius:10,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,background:d.done.length===ACTS.length?ACTS[0].bg:d.done.length>0?(isDark?"#3D2A06":"#FAEEDA"):"transparent",color:d.done.length===ACTS.length?ACTS[0].color:d.done.length>0?(isDark?"#FAC775":"#633806"):txt3,border:d.today?`2px solid ${txt1}`:`0.5px solid ${bdr}`}}>
+                    {d.done.length||"—"}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Stale enquiries */}
+        {stale.length>0&&<div style={{...cd,borderColor:isDark?"#501313":"#F7C1C1",background:isDark?"#2D0F0F":"#FEF2F2"}}>
+          <div style={{padding:"12px 16px"}}>
+            <div style={{fontSize:13,fontWeight:600,color:isDark?"#F09595":"#791F1F",marginBottom:6}}>Stale photo enquiries</div>
+            {stale.map(j=><div key={j.id} style={{fontSize:13,color:isDark?"#F09595":"#A32D2D",padding:"3px 0"}}>{j.client} — {ago(j.created||j.date)}d old</div>)}
+          </div>
+        </div>}
+
+        {/* AI Briefing */}
+        <div style={cd}>
+          <div style={ch}>
+            <div><div style={ctt}>AI Briefing</div><div style={css}>Weather, news, your day</div></div>
+            <div style={{display:"flex",gap:6}}>
+              {brief&&<button onClick={doSpk} style={bt(spk?(isDark?"#501313":"#FCEBEB"):(isDark?"#1F1B3D":"#EEEDFE"),spk?(isDark?"#F09595":"#791F1F"):(isDark?"#AFA9EC":"#534AB7"))}>{spk?"Stop":"Play"}</button>}
+              <button onClick={genBrief} disabled={bLoad} style={bt(bLoad?bg2:(isDark?"#e5e5e5":"#1a1a1a"),bLoad?txt2:(isDark?"#0a0a0a":"#fff"))}>{bLoad?"...":brief?"Refresh":"Generate"}</button>
+            </div>
+          </div>
+          {brief&&<div style={{padding:"14px 16px",fontSize:13.5,lineHeight:1.75,color:txt1,whiteSpace:"pre-wrap"}}>{brief}</div>}
+          {!brief&&!bLoad&&<div style={{textAlign:"center",padding:"24px 16px",color:txt3,fontSize:13}}>
+            {apiKey?"Tap Generate for your morning briefing":"Add your API key below, then tap Generate"}
+          </div>}
+        </div>
+
+        {/* API Key */}
+        {!apiKey&&<div style={{...cd,borderColor:isDark?"#3D2A06":"#fde68a",background:isDark?"#1F1706":"#fffbeb"}}>
+          <div style={{padding:"14px 16px"}}>
+            <div style={{fontSize:13,fontWeight:600,color:isDark?"#FAC775":"#854F0B",marginBottom:8}}>API key needed for AI features</div>
+            <div style={{fontSize:12,color:isDark?"#BA7517":"#854F0B",marginBottom:8}}>Get yours free at console.anthropic.com</div>
+            {showKey?<div>
+              <input value={keyInput} onChange={e=>setKeyInput(e.target.value)} type="password" placeholder="sk-ant-..." style={ip}/>
+              <button onClick={()=>{if(keyInput.trim()){localStorage.setItem("ash-hq-apikey",keyInput.trim());setApiKey(keyInput.trim());setShowKey(false);}}} style={{...bt(green,"#fff"),width:"100%",padding:11}}>Save key</button>
+            </div>:<button onClick={()=>setShowKey(true)} style={bt(isDark?"#3D2A06":"#854F0B","#fff")}>Add API key</button>}
+          </div>
+        </div>}
+      </>}
+
+      {/* ══════ TASKS ══════ */}
+      {tab==="tasks"&&<>
+        <div style={{display:"flex",gap:6,marginBottom:10,overflowX:"auto"}}>
+          {["today","upcoming","overdue","all","done"].map(v=>(
+            <button key={v} onClick={()=>setVm(v)} style={{padding:"7px 14px",borderRadius:10,border:"none",cursor:"pointer",background:vm===v?(isDark?"#e5e5e5":"#1a1a1a"):bg2,color:vm===v?(isDark?"#0a0a0a":"#fff"):txt2,fontSize:12,fontWeight:600,fontFamily:"inherit",whiteSpace:"nowrap",textTransform:"capitalize"}}>{v}{v==="overdue"&&overdueC>0?` (${overdueC})`:""}</button>
+          ))}
+        </div>
+        <div style={{display:"flex",gap:5,marginBottom:14,overflowX:"auto"}}>
+          <button onClick={()=>setFlt("all")} style={{padding:"5px 12px",borderRadius:20,border:flt==="all"?`1.5px solid ${txt1}`:`0.5px solid ${bdr}`,cursor:"pointer",background:"transparent",fontSize:11,fontWeight:600,fontFamily:"inherit",color:flt==="all"?txt1:txt2}}>All</button>
+          {CATS.map(c=>(
+            <button key={c.key} onClick={()=>setFlt(c.key)} style={{padding:"5px 12px",borderRadius:20,cursor:"pointer",fontSize:11,fontWeight:600,fontFamily:"inherit",border:flt===c.key?`1.5px solid ${c.c}`:`0.5px solid ${bdr}`,background:flt===c.key?c.bg:"transparent",color:flt===c.key?c.c:txt2,whiteSpace:"nowrap"}}>{c.icon} {c.label}</button>
+          ))}
+        </div>
+
+        {tmpls&&<div style={{...cd,padding:"12px 16px"}}><div style={{fontSize:13,fontWeight:600,marginBottom:8,color:txt1}}>Templates</div><div style={{display:"flex",flexWrap:"wrap",gap:6}}>{TMPLS.map((t,i)=>{const c=getCat(t.cat);return(<button key={i} onClick={()=>{setTasks(p=>[{id:uid(),text:t.text,cat:t.cat,due:TD,pri:"normal",done:false,created:TD},...p]);setTmpls(false);}} style={{padding:"6px 12px",borderRadius:20,border:`0.5px solid ${c.c}30`,background:c.bg,color:c.dk,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>+ {t.text}</button>);})}</div></div>}
+
+        {filtTasks.length===0&&<div style={{textAlign:"center",padding:"32px 16px",color:txt3,fontSize:13}}>{vm==="done"?"Nothing done yet":"No tasks here"}</div>}
+        {filtTasks.map(t=>{const c=getCat(t.cat);const od=!t.done&&t.due<TD;return(
+          <div key={t.id} style={{...cd,borderLeft:`3px solid ${od?red:c.c}`,opacity:t.done?0.5:1,marginBottom:8}}>
+            <div style={{padding:"12px 14px",display:"flex",gap:10,alignItems:"flex-start"}}>
+              <button onClick={()=>setTasks(p=>p.map(x=>x.id===t.id?{...x,done:!x.done}:x))} style={{width:24,height:24,borderRadius:8,flexShrink:0,marginTop:1,border:t.done?"none":`2px solid ${c.c}`,background:t.done?c.c:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:12}}>{t.done?"✓":""}</button>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:13.5,fontWeight:500,color:txt1,textDecoration:t.done?"line-through":"none",wordBreak:"break-word"}}>{t.text}</div>
+                <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap"}}>
+                  <span style={pl(c.bg,c.dk)}>{c.label}</span>
+                  {t.pri==="urgent"&&<span style={pl(isDark?"#501313":"#FCEBEB",isDark?"#F09595":"#791F1F")}>Urgent</span>}
+                  {od&&<span style={{fontSize:11,fontWeight:600,color:red}}>Overdue</span>}
+                  {t.due!==TD&&!od&&<span style={{fontSize:11,color:txt2}}>{fdt(t.due)}</span>}
+                </div>
+              </div>
+              <button onClick={()=>setTasks(p=>p.filter(x=>x.id!==t.id))} style={{width:26,height:26,borderRadius:8,border:"none",background:bg2,cursor:"pointer",fontSize:12,color:txt2,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>×</button>
+            </div>
+          </div>
+        );})}
+
+        <div style={{display:"flex",gap:8,marginTop:4}}>
+          {!add&&<><button onClick={()=>setAdd(true)} style={{flex:1,padding:13,borderRadius:14,border:`1.5px dashed ${bdr}`,cursor:"pointer",background:"transparent",fontSize:13,fontWeight:600,fontFamily:"inherit",color:txt2}}>+ New task</button>
+          <button onClick={()=>setTmpls(!tmpls)} style={{padding:"13px 18px",borderRadius:14,border:`0.5px solid ${bdr}`,cursor:"pointer",background:"transparent",fontSize:13,fontWeight:600,fontFamily:"inherit",color:txt2}}>Templates</button></>}
+        </div>
+
+        {add&&<div style={{...cd,padding:16,marginTop:8}}>
+          <input value={form.text} onChange={e=>setForm(f=>({...f,text:e.target.value}))} onKeyDown={e=>e.key==="Enter"&&doAdd()} placeholder="What needs doing?" style={{...ip,fontSize:14}} autoFocus/>
+          <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
+            {CATS.map(c=>(<button key={c.key} onClick={()=>setForm(f=>({...f,cat:c.key}))} style={{padding:"5px 10px",borderRadius:20,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",border:form.cat===c.key?`1.5px solid ${c.c}`:`0.5px solid ${bdr}`,background:form.cat===c.key?c.bg:"transparent",color:form.cat===c.key?c.c:txt2}}>{c.icon} {c.label}</button>))}
+          </div>
+          <div style={{display:"flex",gap:8,marginBottom:10}}>
+            <input type="date" value={form.due} onChange={e=>setForm(f=>({...f,due:e.target.value}))} style={{flex:1,padding:10,borderRadius:10,border:`0.5px solid ${bdr}`,fontSize:12,fontFamily:"inherit",outline:"none",background:bg1,color:txt1}}/>
+            <button onClick={()=>setForm(f=>({...f,pri:f.pri==="urgent"?"normal":"urgent"}))} style={{padding:"10px 14px",borderRadius:10,cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit",border:form.pri==="urgent"?`1.5px solid ${red}`:`0.5px solid ${bdr}`,background:form.pri==="urgent"?(isDark?"#501313":"#FCEBEB"):"transparent",color:form.pri==="urgent"?red:txt2}}>Urgent</button>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={doAdd} style={{...bt(green,"#fff"),flex:1,padding:12}}>Add task</button>
+            <button onClick={()=>setAdd(false)} style={{padding:"12px 20px",borderRadius:10,border:`0.5px solid ${bdr}`,cursor:"pointer",background:"transparent",fontSize:13,fontFamily:"inherit",color:txt2}}>Cancel</button>
+          </div>
+        </div>}
+      </>}
+
+      {/* ══════ ACTIVITY ══════ */}
+      {tab==="activity"&&<>
+        <div style={cd}>
+          <div style={ch}><div><div style={ctt}>Today</div><div style={css}>Tap what you've done</div></div><span style={pl(todayActs.length===ACTS.length?ACTS[0].bg:(isDark?"#3D2A06":"#FAEEDA"),todayActs.length===ACTS.length?ACTS[0].color:(isDark?"#FAC775":"#633806"))}>{todayActs.length}/{ACTS.length}</span></div>
+          <div style={{padding:"12px 16px 8px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            {ACTS.map(a=>{const done=isAct(a.key);return(
+              <button key={a.key} onClick={()=>tglAct(a.key)} style={{padding:"14px 12px",borderRadius:14,cursor:"pointer",fontFamily:"inherit",border:done?`2px solid ${a.color}`:`0.5px solid ${bdr}`,background:done?a.bg:"transparent",color:done?a.color:txt3,fontSize:13,fontWeight:600,textAlign:"center",transition:"all 0.15s"}}>
+                <div style={{fontSize:26,marginBottom:4}}>{a.icon}</div>{a.label}{done&&<div style={{fontSize:16,marginTop:4}}>✓</div>}
+              </button>
+            );})}
+          </div>
+          <div style={{padding:"8px 16px 14px"}}>
+            {noteEdit?<div style={{display:"flex",gap:8}}><input value={noteText} onChange={e=>setNoteText(e.target.value)} placeholder="How was today?" style={{flex:1,padding:10,borderRadius:10,border:`0.5px solid ${bdr}`,fontSize:12,fontFamily:"inherit",outline:"none",background:bg1,color:txt1}} autoFocus/><button onClick={()=>{if(noteText.trim())setNotes(p=>({...p,[TD]:noteText.trim()}));setNoteEdit(false);}} style={bt(green,"#fff")}>Save</button></div>
+            :<button onClick={()=>{setNoteText(notes[TD]||"");setNoteEdit(true);}} style={{fontSize:12,color:notes[TD]?txt1:green,fontWeight:notes[TD]?400:600,background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",padding:0}}>{notes[TD]||"+ Add note"}</button>}
+          </div>
+        </div>
+
+        {/* Week */}
+        <div style={cd}>
+          <div style={ch}><div style={ctt}>This week</div><span style={pl(isDark?"#1F1B3D":"#EEEDFE",isDark?"#AFA9EC":"#3C3489")}>{wkRate}%</span></div>
+          <div style={{padding:"8px 16px 14px"}}>
+            {wkData.map(d=>(
+              <div key={d.date} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`0.5px solid ${bdr2}`,opacity:d.future?0.3:1}}>
+                <div style={{width:36,textAlign:"center"}}>
+                  <div style={{fontSize:10,fontWeight:d.today?700:500,color:d.today?txt1:txt2}}>{d.day}</div>
+                  <div style={{fontSize:14,fontWeight:700,color:d.today?txt1:txt3}}>{d.num}</div>
+                </div>
+                <div style={{flex:1,display:"flex",gap:4,flexWrap:"wrap"}}>
+                  {d.done.length>0?d.done.map(a=>(<span key={a.key} style={{...pl(a.bg,a.color),fontSize:10,padding:"2px 8px",borderRadius:20}}>{a.icon} {a.label}</span>)):<span style={{fontSize:11,color:txt3}}>{d.future?"—":"Rest day"}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Weight with dates */}
+        <div style={cd}>
+          <div style={ch}><div><div style={ctt}>Weight</div><div style={css}>{body.length>0?`${body[0].weight}kg — ${fdt(body[0].date)}`:"Track your cut"}</div></div></div>
+          {body.length>=2&&<div style={{padding:"8px 16px 4px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:6}}>
+              <span style={{color:txt2}}>Last {Math.min(body.length,8)}</span>
+              <span style={{fontWeight:600,color:body[0].weight<body[Math.min(body.length-1,7)].weight?green:red}}>{body[0].weight<body[Math.min(body.length-1,7)].weight?"↓ Dropping":"↑ Up"}</span>
+            </div>
+            <div style={{display:"flex",alignItems:"flex-end",gap:3,height:60}}>
+              {body.slice(0,8).reverse().map((b,i,a)=>{const mn=Math.min(...a.map(x=>x.weight));const mx=Math.max(...a.map(x=>x.weight));const rng=mx-mn||1;return(
+                <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                  <div style={{fontSize:9,color:txt2,fontWeight:500}}>{b.weight}</div>
+                  <div style={{width:"100%",height:Math.round(10+((b.weight-mn)/rng)*40),borderRadius:4,background:i===a.length-1?green:ACTS[0].bg}}/>
+                  <div style={{fontSize:8,color:txt3}}>{fdt(b.date)}</div>
+                </div>
+              );})}
+            </div>
+          </div>}
+          {addB?<div style={{padding:"10px 16px 14px",display:"flex",gap:8}}>
+            <input value={bf.weight} onChange={e=>setBf({weight:e.target.value})} placeholder="kg" type="number" step="0.1" style={{width:80,padding:10,borderRadius:10,border:`0.5px solid ${bdr}`,fontSize:13,fontFamily:"inherit",outline:"none",background:bg1,color:txt1}} autoFocus/>
+            <button onClick={()=>{if(!bf.weight)return;setBody(p=>[{id:uid(),weight:parseFloat(bf.weight),date:TD},...p]);setBf({weight:""});setAddB(false);}} style={bt(green,"#fff")}>Save</button>
+            <button onClick={()=>setAddB(false)} style={{padding:"8px 12px",borderRadius:10,border:`0.5px solid ${bdr}`,cursor:"pointer",background:"transparent",fontSize:13,fontFamily:"inherit",color:txt2}}>×</button>
+          </div>:<div style={{padding:"10px 16px 14px"}}><button onClick={()=>setAddB(true)} style={{fontSize:12,color:green,fontWeight:600,background:"none",border:"none",cursor:"pointer",fontFamily:"inherit"}}>+ Log weigh-in</button></div>}
+        </div>
+      </>}
+
+      {/* ══════ PHOTO ══════ */}
+      {tab==="photo"&&<>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
+          {[{l:"Enquiries",n:photos.filter(j=>j.status==="enquiry").length,c:isDark?"#7F77DD":"#534AB7",bg:isDark?"#1F1B3D":"#EEEDFE"},{l:"Booked",n:photos.filter(j=>j.status==="booked").length,c:green,bg:ACTS[0].bg},{l:MO[MI].slice(0,3)+" rev",n:gbp(moRev),c:isDark?"#BA7517":"#854F0B",bg:isDark?"#3D2A06":"#FAEEDA"}].map((s,i)=>(
+            <div key={i} style={{background:s.bg,borderRadius:12,padding:"14px 10px",textAlign:"center"}}>
+              <div style={{fontSize:i===2?15:22,fontWeight:700,color:s.c}}>{s.n}</div>
+              <div style={{fontSize:10,fontWeight:600,color:s.c,opacity:0.8}}>{s.l}</div>
+            </div>
+          ))}
+        </div>
+
+        {stale.length>0&&<div style={{...cd,borderColor:isDark?"#501313":"#F7C1C1",background:isDark?"#2D0F0F":"#FEF2F2"}}>
+          <div style={{padding:"12px 16px"}}><div style={{fontSize:13,fontWeight:600,color:isDark?"#F09595":"#791F1F",marginBottom:6}}>Chase these now</div>
+          {stale.map(j=><div key={j.id} style={{fontSize:13,color:isDark?"#F09595":"#A32D2D",padding:"3px 0"}}>{j.client} — {ago(j.created||j.date)}d</div>)}</div>
+        </div>}
+
+        {addP?<div style={{...cd,padding:16}}>
+          <div style={{fontSize:14,fontWeight:600,marginBottom:10,color:txt1}}>New job</div>
+          <input value={pf.client} onChange={e=>setPf(f=>({...f,client:e.target.value}))} placeholder="Client name" style={ip} autoFocus/>
+          <input value={pf.location} onChange={e=>setPf(f=>({...f,location:e.target.value}))} placeholder="Location" style={ip}/>
+          <div style={{display:"flex",gap:8,marginBottom:8}}>
+            <input type="date" value={pf.date} onChange={e=>setPf(f=>({...f,date:e.target.value}))} style={{flex:1,padding:10,borderRadius:10,border:`0.5px solid ${bdr}`,fontSize:12,fontFamily:"inherit",outline:"none",background:bg1,color:txt1}}/>
+            <input value={pf.revenue} onChange={e=>setPf(f=>({...f,revenue:e.target.value}))} placeholder="£ fee" type="number" style={{width:80,padding:10,borderRadius:10,border:`0.5px solid ${bdr}`,fontSize:12,fontFamily:"inherit",outline:"none",background:bg1,color:txt1}}/>
+          </div>
+          <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
+            {["enquiry","booked","completed","cancelled"].map(s=>(<button key={s} onClick={()=>setPf(f=>({...f,status:s}))} style={{padding:"6px 12px",borderRadius:20,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",textTransform:"capitalize",border:pf.status===s?`1.5px solid ${isDark?"#7F77DD":"#534AB7"}`:`0.5px solid ${bdr}`,background:pf.status===s?(isDark?"#1F1B3D":"#EEEDFE"):"transparent",color:pf.status===s?(isDark?"#AFA9EC":"#534AB7"):txt2}}>{s}</button>))}
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>{if(!pf.client.trim())return;setPhotos(p=>[{id:uid(),...pf,client:pf.client.trim(),created:TD},...p]);setPf({client:"",date:TD,location:"",status:"enquiry",revenue:""});setAddP(false);}} style={{...bt(isDark?"#7F77DD":"#534AB7","#fff"),flex:1,padding:11}}>Add</button>
+            <button onClick={()=>setAddP(false)} style={{padding:"11px 18px",borderRadius:10,border:`0.5px solid ${bdr}`,cursor:"pointer",background:"transparent",fontSize:13,fontFamily:"inherit",color:txt2}}>Cancel</button>
+          </div>
+        </div>:<button onClick={()=>setAddP(true)} style={{width:"100%",padding:13,borderRadius:14,border:`1.5px dashed ${isDark?"#534AB7":"#AFA9EC"}`,cursor:"pointer",background:"transparent",fontSize:13,fontWeight:600,fontFamily:"inherit",color:isDark?"#7F77DD":"#534AB7",marginBottom:14}}>+ Add job</button>}
+
+        <div style={cd}>
+          <div style={{...ch,borderBottom:photos.length>0?`0.5px solid ${bdr}`:"none"}}><div style={ctt}>All jobs</div></div>
+          {photos.map((j,i)=>{const sc={enquiry:{bg:isDark?"#1F1B3D":"#EEEDFE",c:isDark?"#AFA9EC":"#3C3489"},booked:{bg:ACTS[0].bg,c:green},completed:{bg:isDark?"#3D2A06":"#FAEEDA",c:isDark?"#FAC775":"#633806"},cancelled:{bg:bg2,c:txt2}}[j.status]||{bg:bg2,c:txt2};return(
+            <div key={j.id} style={{...rw,borderBottom:i<photos.length-1?`0.5px solid ${bdr2}`:"none"}}>
+              <div style={{flex:1}}><div style={{fontSize:13,fontWeight:500,color:txt1}}>{j.client}{j.location?" — "+j.location:""}{j.revenue?" — "+gbp(j.revenue):""}</div><div style={{fontSize:11,color:txt2,marginTop:2}}>{fdt(j.date)}</div></div>
+              <select value={j.status} onChange={e=>setPhotos(p=>p.map(x=>x.id===j.id?{...x,status:e.target.value}:x))} style={{padding:"4px 8px",borderRadius:8,border:`1px solid ${sc.c}30`,background:sc.bg,color:sc.c,fontSize:11,fontWeight:600,fontFamily:"inherit",outline:"none",cursor:"pointer"}}><option value="enquiry">Enquiry</option><option value="booked">Booked</option><option value="completed">Done</option><option value="cancelled">Cancelled</option></select>
+            </div>
+          );})}
+          {photos.length===0&&<div style={{textAlign:"center",padding:"24px 16px",color:txt3,fontSize:13}}>No jobs yet</div>}
+        </div>
+      </>}
+
+      {/* ══════ REVIEW ══════ */}
+      {tab==="review"&&<>
+        <div style={{padding:"8px 0 16px",textAlign:"center"}}>
+          <div style={{fontSize:20,fontFamily:"'Playfair Display',serif",color:txt1}}>Weekly review</div>
+        </div>
+
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:14}}>
+          {[{n:doneW,l:"Done",c:green,bg:ACTS[0].bg},{n:missW,l:"Missed",c:missW>0?red:green,bg:missW>0?(isDark?"#501313":"#FCEBEB"):ACTS[0].bg},{n:wkRate+"%",l:"Activity",c:isDark?"#D85A30":"#993C1D",bg:isDark?"#3D1A0A":"#FAECE7"},{n:gbp(moRev),l:"Photo £",c:isDark?"#BA7517":"#854F0B",bg:isDark?"#3D2A06":"#FAEEDA"}].map((s,i)=>(
+            <div key={i} style={{background:s.bg,borderRadius:12,padding:"12px 4px",textAlign:"center"}}>
+              <div style={{fontSize:15,fontWeight:700,color:s.c}}>{s.n}</div>
+              <div style={{fontSize:9,fontWeight:600,color:s.c,opacity:0.8}}>{s.l}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={cd}>
+          <div style={{padding:"14px 16px"}}>
+            <div style={{...ctt,marginBottom:8}}>Activity</div>
+            {wkData.filter(d=>!d.future).map(d=>(
+              <div key={d.date} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0"}}>
+                <span style={{fontSize:11,fontWeight:d.today?700:500,width:28,color:d.today?txt1:txt2}}>{d.day}</span>
+                {d.done.length>0?d.done.map(a=><span key={a.key} style={{fontSize:14}}>{a.icon}</span>):<span style={{fontSize:11,color:txt3}}>—</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Goals */}
+        <div style={cd}>
+          <div style={ch}><div style={ctt}>Goals</div></div>
+          {goals.map(g=>{const pct=g.target>0?Math.min(Math.round((g.current/g.target)*100),100):0;return(
+            <div key={g.id} style={{padding:"12px 16px",borderBottom:`0.5px solid ${bdr2}`}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
+                <span style={{fontSize:13,fontWeight:500,color:txt1}}>{g.text}</span>
+                <span style={{fontSize:12,fontWeight:600,color:pct>=100?green:(isDark?"#7F77DD":"#534AB7")}}>{Math.round(g.current)}/{Math.round(g.target)}</span>
+              </div>
+              <div style={{background:bg2,borderRadius:20,height:6,overflow:"hidden",marginBottom:6}}>
+                <div style={{height:"100%",borderRadius:20,background:pct>=100?green:(isDark?"#7F77DD":"#534AB7"),width:pct+"%"}}/>
+              </div>
+              <input type="range" min="0" max={g.target} value={g.current} onChange={e=>setGoals(p=>p.map(x=>x.id===g.id?{...x,current:parseFloat(e.target.value)||0}:x))} style={{width:"100%"}}/>
+            </div>
+          );})}
+          {addG?<div style={{padding:"12px 16px"}}>
+            <input value={gf.text} onChange={e=>setGf(f=>({...f,text:e.target.value}))} placeholder="Goal (e.g. 50 photo jobs)" style={ip} autoFocus/>
+            <div style={{display:"flex",gap:8}}>
+              <input value={gf.target} onChange={e=>setGf(f=>({...f,target:e.target.value}))} placeholder="Target" type="number" style={{flex:1,padding:10,borderRadius:10,border:`0.5px solid ${bdr}`,fontSize:13,fontFamily:"inherit",outline:"none",background:bg1,color:txt1}}/>
+              <input value={gf.current} onChange={e=>setGf(f=>({...f,current:e.target.value}))} placeholder="Current" type="number" style={{flex:1,padding:10,borderRadius:10,border:`0.5px solid ${bdr}`,fontSize:13,fontFamily:"inherit",outline:"none",background:bg1,color:txt1}}/>
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:8}}>
+              <button onClick={()=>{if(!gf.text.trim()||!gf.target)return;setGoals(p=>[...p,{id:uid(),text:gf.text.trim(),target:parseFloat(gf.target),current:parseFloat(gf.current)||0}]);setGf({text:"",target:"",current:""});setAddG(false);}} style={{...bt(isDark?"#7F77DD":"#534AB7","#fff"),flex:1,padding:10}}>Add</button>
+              <button onClick={()=>setAddG(false)} style={{padding:"10px 14px",borderRadius:10,border:`0.5px solid ${bdr}`,cursor:"pointer",background:"transparent",fontSize:13,fontFamily:"inherit",color:txt2}}>Cancel</button>
+            </div>
+          </div>:<div style={{padding:"10px 16px"}}><button onClick={()=>setAddG(true)} style={{fontSize:12,color:isDark?"#7F77DD":"#534AB7",fontWeight:600,background:"none",border:"none",cursor:"pointer",fontFamily:"inherit"}}>+ Add a goal</button></div>}
+        </div>
+
+        {/* AI Review */}
+        <button onClick={genReview} disabled={aiLoad} style={{width:"100%",padding:14,borderRadius:14,border:"none",cursor:"pointer",background:isDark?"#e5e5e5":"#1a1a1a",fontSize:14,fontWeight:600,fontFamily:"inherit",color:isDark?"#0a0a0a":"#fff",marginBottom:10}}>{aiLoad?"Generating...":"AI weekly review"}</button>
+        {aiResult&&<div style={{...cd,padding:"14px 16px"}}><div style={{fontSize:13.5,lineHeight:1.75,color:txt1,whiteSpace:"pre-wrap"}}>{aiResult}</div></div>}
+
+        {PROP_APP?<a href={PROP_APP} style={{display:"block",width:"100%",padding:14,borderRadius:14,border:`0.5px solid ${bdr}`,cursor:"pointer",background:bg1,fontSize:14,fontWeight:600,fontFamily:"inherit",color:green,textDecoration:"none",textAlign:"center",boxSizing:"border-box"}}>Open property portfolio app</a>
+        :<button onClick={()=>alert("Set PROP_APP URL in the code")} style={{width:"100%",padding:14,borderRadius:14,border:`0.5px solid ${bdr}`,cursor:"pointer",background:bg1,fontSize:14,fontWeight:600,fontFamily:"inherit",color:green}}>Open property portfolio app</button>}
+      </>}
+
+      <div style={{textAlign:"center",padding:"24px 0",fontSize:11,color:txt3}}>Ash's Daily HQ</div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+  </script>
+</body>
+</html>
