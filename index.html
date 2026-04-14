@@ -7,12 +7,7 @@
   <meta name="theme-color" content="#f8f8f6">
   <title>Ash Daily HQ</title>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@400;500;600&display=swap" rel="stylesheet">
-  <style>
-    *{box-sizing:border-box;margin:0;padding:0}
-    body{background:#f8f8f6;font-family:'DM Sans',system-ui,sans-serif;color:#1a1a1a;-webkit-tap-highlight-color:transparent}
-    input,select,button,textarea{font-family:inherit}
-    ::-webkit-scrollbar{display:none}
-  </style>
+  <style>*{box-sizing:border-box;margin:0;padding:0}body{background:#f8f8f6;font-family:'DM Sans',system-ui,sans-serif;color:#1a1a1a;-webkit-tap-highlight-color:transparent}input,select,button,textarea{font-family:inherit}::-webkit-scrollbar{display:none}</style>
 </head>
 <body>
 <div id="root"></div>
@@ -25,23 +20,36 @@
 const {useState,useEffect,useRef}=React;
 
 firebase.initializeApp({apiKey:"AIzaSyAaxhoM0O6seClznekYK71iQhC_WoFdrsQ",authDomain:"ash-property-app.firebaseapp.com",projectId:"ash-property-app",storageBucket:"ash-property-app.firebasestorage.app",messagingSenderId:"170227737480",appId:"1:170227737480:web:523be104809c515783d03d"});
-const db=firebase.firestore();
-const DOC=db.collection("dailyhq").doc("ash");
-const PASS="AshHQ2026";
-const AK="ash-hq-auth";
+const db=firebase.firestore(),DOC=db.collection("dailyhq").doc("ash"),PASS="AshHQ2026",AK="ash-hq-auth";
 
 // ═══ HELPERS ═══
 const now=new Date(),TD=now.toISOString().split("T")[0],DN=now.getDate(),MI=now.getMonth(),YR=now.getFullYear();
-const DAYS=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-const DS=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const DAYS=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"],DS=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 const MO=["January","February","March","April","May","June","July","August","September","October","November","December"];
 const grW=now.getHours()<12?"Morning":now.getHours()<17?"Afternoon":"Evening";
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const fmt=ds=>{if(!ds)return"";const d=new Date(ds);return d.getDate()+" "+MO[d.getMonth()].slice(0,3);};
+const fmtFull=ds=>{if(!ds)return"";const d=new Date(ds);return DAYS[d.getDay()]+" "+d.getDate()+" "+MO[d.getMonth()];};
 const ago=ds=>Math.floor((now-new Date(ds))/864e5);
-function weekDates(){const d=new Date(now),day=d.getDay(),m=new Date(d);m.setDate(d.getDate()-((day+6)%7));return Array.from({length:7},(_,i)=>{const x=new Date(m);x.setDate(m.getDate()+i);return x.toISOString().split("T")[0];});}
-const WK=weekDates();
+const dateShift=(ds,n)=>{const d=new Date(ds);d.setDate(d.getDate()+n);return d.toISOString().split("T")[0];};
+
+function twoWeekDates(){
+  const d=new Date(now),day=d.getDay(),m=new Date(d);
+  m.setDate(d.getDate()-((day+6)%7)-7);
+  return Array.from({length:14},(_,i)=>{const x=new Date(m);x.setDate(m.getDate()+i);return x.toISOString().split("T")[0];});
+}
+const TW=twoWeekDates();
+const thisWeekStart=TW[7];
+
 function calUrl(t,d){const ds=(d||TD).replace(/-/g,"");return"https://www.google.com/calendar/render?action=TEMPLATE&text="+encodeURIComponent(t)+"&dates="+ds+"T090000/"+ds+"T100000";}
+
+// next recurrence date
+function nextRecur(due,type){
+  const d=new Date(due);
+  if(type==="weekly")d.setDate(d.getDate()+7);
+  else if(type==="monthly")d.setMonth(d.getMonth()+1);
+  return d.toISOString().split("T")[0];
+}
 
 // ═══ THEME ═══
 const C={
@@ -72,32 +80,22 @@ const DEFAULT_ACTS=[
 ];
 
 const TMPLS=["Check rent payments","Chase late rent","Review compliance","Property inspections","Review finances","Plan the week"];
-
 const TABS=[{k:"today",l:"Today",i:"☀"},{k:"tasks",l:"Tasks",i:"✓"},{k:"proj",l:"Projects",i:"📋"},{k:"activity",l:"Activity",i:"🏃"}];
 
 // ═══ STYLES ═══
 const card={background:C.card,borderRadius:16,border:"1px solid "+C.bdr,marginBottom:12,overflow:"hidden"};
 const cHead={padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid "+C.bdr};
-const pill=(bg,c)=>({display:"inline-flex",padding:"3px 9px",borderRadius:99,fontSize:11,fontWeight:600,background:bg,color:c});
+const pl=(bg,c)=>({display:"inline-flex",padding:"3px 9px",borderRadius:99,fontSize:11,fontWeight:600,background:bg,color:c});
 const inp={width:"100%",border:"1px solid "+C.bdr,borderRadius:12,padding:"10px 12px",fontSize:14,background:C.card,color:C.txt,outline:"none",marginBottom:8};
 
 // ═══ VOICE ═══
 function speakText(text){
-  if(!window.speechSynthesis)return;
-  window.speechSynthesis.cancel();
+  if(!window.speechSynthesis)return;window.speechSynthesis.cancel();
   const clean=text.replace(/[^\x20-\x7E\n]/g," ").replace(/[*#_~`>|]/g,"").replace(/\n{2,}/g,". ").replace(/\n/g,". ").replace(/\s{2,}/g," ").trim();
-  const parts=clean.match(/[^.!?]+[.!?]+/g)||[clean];
-  let i=0;
-  function next(){
-    if(i>=parts.length)return;
-    const u=new SpeechSynthesisUtterance(parts[i].trim());
-    u.lang="en-GB";u.rate=0.93;u.pitch=1;
-    const v=window.speechSynthesis.getVoices();
-    const gb=v.find(x=>x.lang==="en-GB")||v.find(x=>x.lang.startsWith("en"));
-    if(gb)u.voice=gb;
-    u.onend=()=>{i++;next();};u.onerror=()=>{i++;next();};
-    window.speechSynthesis.speak(u);
-  }
+  const parts=clean.match(/[^.!?]+[.!?]+/g)||[clean];let i=0;
+  function next(){if(i>=parts.length)return;const u=new SpeechSynthesisUtterance(parts[i].trim());u.lang="en-GB";u.rate=0.93;
+    const v=window.speechSynthesis.getVoices();const gb=v.find(x=>x.lang==="en-GB")||v.find(x=>x.lang.startsWith("en"));if(gb)u.voice=gb;
+    u.onend=()=>{i++;next();};u.onerror=()=>{i++;next();};window.speechSynthesis.speak(u);}
   if(window.speechSynthesis.getVoices().length===0){window.speechSynthesis.onvoiceschanged=next;}else{next();}
 }
 
@@ -106,17 +104,15 @@ function callAI(key,sys,msg,cb){
   fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
     body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:800,system:sys,messages:[{role:"user",content:msg}]})
   }).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
-  .then(d=>{cb(d.content?d.content.map(c=>c.text||"").join(""):"Error.");})
-  .catch(e=>{cb("Error: "+e.message);});
+  .then(d=>{cb(d.content?d.content.map(c=>c.text||"").join(""):"Error.");}).catch(e=>{cb("Error: "+e.message);});
 }
 
-// ═══ WEIGHT CHART ═══
+// ═══ SVG WEIGHT CHART ═══
 function WChart({data}){
   if(data.length<2)return null;
   const e=data.slice(0,12).reverse(),w=e.map(x=>x.weight);
   const mn=Math.min(...w),mx=Math.max(...w),rng=mx-mn||1;
-  const W=320,H=110,px=24,py=18;
-  const iw=(W-px*2)/(e.length-1);
+  const W=320,H=110,px=24,py=18,iw=(W-px*2)/(e.length-1);
   const pts=e.map((x,i)=>({x:px+i*iw,y:py+(1-(x.weight-mn)/rng)*(H-py*2),w:x.weight,d:x.date}));
   const line=pts.map((p,i)=>(i===0?"M":"L")+p.x.toFixed(1)+","+p.y.toFixed(1)).join(" ");
   const area=line+" L"+pts[pts.length-1].x+","+(H-py)+" L"+pts[0].x+","+(H-py)+" Z";
@@ -124,8 +120,8 @@ function WChart({data}){
     <defs><linearGradient id="wg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={C.grn} stopOpacity="0.12"/><stop offset="100%" stopColor={C.grn} stopOpacity="0"/></linearGradient></defs>
     <path d={area} fill="url(#wg)"/><path d={line} fill="none" stroke={C.grn} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
     {pts.map((p,i)=><g key={i}><circle cx={p.x} cy={p.y} r={i===pts.length-1?4:2.5} fill={i===pts.length-1?C.grn:"#fff"} stroke={C.grn} strokeWidth="2"/>
-      <text x={p.x} y={p.y-10} textAnchor="middle" fontSize="9" fill={C.t2} fontWeight="500">{p.w}</text>
-      <text x={p.x} y={H-3} textAnchor="middle" fontSize="8" fill={C.t3}>{fmt(p.d)}</text></g>)}
+    <text x={p.x} y={p.y-10} textAnchor="middle" fontSize="9" fill={C.t2} fontWeight="500">{p.w}</text>
+    <text x={p.x} y={H-3} textAnchor="middle" fontSize="8" fill={C.t3}>{fmt(p.d)}</text></g>)}
   </svg>;
 }
 
@@ -136,7 +132,7 @@ function Login({onLogin}){
   return <div style={{minHeight:"100vh",background:"#1a1a1a",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:32}}>
     <div style={{fontSize:48,marginBottom:16}}>☀️</div>
     <div style={{color:"#fff",fontSize:24,fontFamily:"'Playfair Display',serif",fontWeight:500,marginBottom:4}}>Daily HQ</div>
-    <div style={{color:"#888",fontSize:13,marginBottom:28}}>Enter password to continue</div>
+    <div style={{color:"#888",fontSize:13,marginBottom:28}}>Enter password</div>
     <input type="password" value={pw} placeholder="Password" onChange={e=>{setPw(e.target.value);setErr(false);}} onKeyDown={e=>e.key==="Enter"&&go()} style={{width:"100%",maxWidth:280,padding:"14px 16px",borderRadius:12,border:"1.5px solid #333",background:"#111",color:"#fff",fontSize:16,marginBottom:12,outline:"none"}}/>
     <button onClick={go} style={{width:"100%",maxWidth:280,padding:14,borderRadius:12,background:C.grn,color:"#fff",fontSize:15,fontWeight:600,border:"none",cursor:"pointer"}}>Log In</button>
     {err&&<div style={{color:"#fb7185",fontSize:13,marginTop:10}}>Incorrect password</div>}
@@ -155,43 +151,29 @@ function HQ(){
   const[data,setData]=useState(null);
   const sr=useRef(null);
 
-  const[brief,setBrief]=useState(null);
-  const[bLoad,setBLoad]=useState(false);
-  const[spk,setSpk]=useState(false);
-  const[showBrief,setShowBrief]=useState(false);
-  const[addT,setAddT]=useState(false);
-  const[tf,setTf]=useState({text:"",cat:"property",due:TD,pri:"normal"});
-  const[flt,setFlt]=useState("all");
-  const[vm,setVm]=useState("today");
-  const[editId,setEditId]=useState(null);
-  const[editF,setEditF]=useState({});
-  const[addP,setAddP]=useState(false);
-  const[pf,setPf]=useState({title:"",deadline:"",notes:""});
-  const[addSub,setAddSub]=useState(null);
-  const[subF,setSubF]=useState({text:"",due:""});
-  const[editPid,setEditPid]=useState(null);
-  const[editPf,setEditPf]=useState({});
-  const[addG,setAddG]=useState(false);
-  const[gf,setGf]=useState({text:"",deadline:""});
-  const[addB,setAddB]=useState(false);
-  const[bw,setBw]=useState("");
-  const[noteEd,setNoteEd]=useState(false);
-  const[noteTx,setNoteTx]=useState("");
-  const[addAct,setAddAct]=useState(false);
-  const[actN,setActN]=useState("");
-  const[apiKey,setApiKey]=useState(()=>localStorage.getItem("ash-hq-key")||"");
-  const[showKey,setShowKey]=useState(false);
-  const[keyIn,setKeyIn]=useState("");
-  const[aiRes,setAiRes]=useState("");
-  const[aiLoad,setAiLoad]=useState(false);
+  // UI
+  const[brief,setBrief]=useState(null);const[bLoad,setBLoad]=useState(false);const[spk,setSpk]=useState(false);const[showBrief,setShowBrief]=useState(false);
+  const[addT,setAddT]=useState(false);const[tf,setTf]=useState({text:"",cat:"property",due:TD,pri:"normal",recur:""});
+  const[flt,setFlt]=useState("all");const[vm,setVm]=useState("today");const[editId,setEditId]=useState(null);const[editF,setEditF]=useState({});
+  const[addP,setAddP]=useState(false);const[pf,setPf]=useState({title:"",deadline:"",notes:""});
+  const[addSub,setAddSub]=useState(null);const[subF,setSubF]=useState({text:"",due:""});
+  const[editPid,setEditPid]=useState(null);const[editPf,setEditPf]=useState({});
+  const[addG,setAddG]=useState(false);const[gf,setGf]=useState({text:"",deadline:""});
+  const[addB,setAddB]=useState(false);const[bw,setBw]=useState("");
+  const[actDate,setActDate]=useState(TD);
+  const[editAct,setEditAct]=useState(null); // which activity is being noted
+  const[actNoteIn,setActNoteIn]=useState("");
+  const[addAct,setAddAct]=useState(false);const[actN,setActN]=useState("");
+  const[apiKey,setApiKey]=useState(()=>localStorage.getItem("ash-hq-key")||"");const[showKey,setShowKey]=useState(false);const[keyIn,setKeyIn]=useState("");
+  const[aiRes,setAiRes]=useState("");const[aiLoad,setAiLoad]=useState(false);
   const[tmpl,setTmpl]=useState(false);
 
-  const SEED={tasks:[],projects:[],goals:[],acts:{},notes:{},body:[],customActs:DEFAULT_ACTS.map(a=>a.name)};
+  const SEED={tasks:[],projects:[],goals:[],acts:{},actNotes:{},notes:{},body:[],customActs:DEFAULT_ACTS.map(a=>a.name)};
 
   useEffect(()=>{DOC.get().then(doc=>{
     let d=doc.exists?doc.data():JSON.parse(JSON.stringify(SEED));
     ["tasks","projects","goals","body"].forEach(k=>{if(!d[k])d[k]=[];});
-    ["acts","notes"].forEach(k=>{if(!d[k])d[k]={};});
+    ["acts","actNotes","notes"].forEach(k=>{if(!d[k])d[k]={};});
     if(!d.customActs||!d.customActs.length)d.customActs=DEFAULT_ACTS.map(a=>a.name);
     setData(d);
   }).catch(()=>setData(JSON.parse(JSON.stringify(SEED))));},[]);
@@ -199,33 +181,75 @@ function HQ(){
   useEffect(()=>{if(!data)return;if(sr.current)clearTimeout(sr.current);sr.current=setTimeout(()=>{DOC.set(JSON.parse(JSON.stringify(data))).catch(()=>{});},1500);},[data]);
   useEffect(()=>()=>{window.speechSynthesis&&window.speechSynthesis.cancel();},[]);
 
+  // Handle recurring tasks on initial load only
+  const recurDone=useRef(false);
+  useEffect(()=>{
+    if(!data||recurDone.current)return;
+    recurDone.current=true;
+    var toAdd=[];
+    data.tasks.forEach(function(t){
+      if(t.done && t.recur && t.due <= TD){
+        var nd=nextRecur(t.due,t.recur);
+        var exists=data.tasks.some(function(x){return x.text===t.text&&x.due===nd&&!x.done;});
+        if(!exists)toAdd.push({id:uid(),text:t.text,cat:t.cat,due:nd,pri:t.pri,done:false,created:TD,recur:t.recur});
+      }
+    });
+    if(toAdd.length>0)setData(function(p){return Object.assign({},p,{tasks:p.tasks.concat(toAdd)});});
+  },[data]);
+
   if(!data)return <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh"}}><div style={{color:C.t2}}>Loading...</div></div>;
 
   const upd=fn=>setData(p=>({...p,...fn(p)}));
-  const{tasks,projects,goals,acts,notes,body,customActs}=data;
+  const{tasks,projects,goals,acts,actNotes,notes,body,customActs}=data;
 
-  // Activity
+  // ─── ACTIVITY ───
   const actStyle=name=>{const d=DEFAULT_ACTS.find(a=>a.name===name);return d||{name,color:C.grn,bg:C.grnBg,tx:C.grnTx};};
-  const tgl=(k,d)=>{const key=k+"-"+(d||TD);upd(p=>{const n={...p.acts};n[key]?delete n[key]:n[key]=true;return{acts:n};});};
-  const isA=(k,d)=>!!(acts[k+"-"+(d||TD)]);
-  const todayDone=customActs.filter(a=>isA(a));
+  const tgl=(k,d)=>{const key=k+"-"+(d||actDate);upd(p=>{const n={...p.acts};n[key]?delete n[key]:n[key]=true;return{acts:n};});};
+  const isA=(k,d)=>!!(acts[k+"-"+(d||actDate)]);
+  const getActNote=(k,d)=>actNotes[k+"-"+(d||actDate)]||"";
+  const setActNote=(k,note,d)=>upd(p=>({actNotes:{...p.actNotes,[k+"-"+(d||actDate)]:note}}));
+  const todayDone=customActs.filter(a=>isA(a,TD));
 
-  // Tasks
+  // ─── TASKS ───
+
   const todayTs=tasks.filter(t=>t.due===TD&&!t.done);
   const overdueTs=tasks.filter(t=>t.due<TD&&!t.done);
   const overdueC=overdueTs.length;
-  const subAsTasks=projects.flatMap(p=>p.subtasks.filter(st=>!st.done&&st.due&&st.due<=TD).map(st=>({...st,_pid:p.id,_pt:p.title,_isSub:true})));
+
+  // Project subtasks → tasks flow (ALL undone subtasks from active projects)
+  const subAsTasks=[];
+  if(projects && projects.length>0){
+    projects.forEach(p=>{
+      if(p.status==="done"||p.status==="on-hold")return;
+      if(p.subtasks && p.subtasks.length>0){
+        p.subtasks.forEach(st=>{
+          if(!st.done){
+            subAsTasks.push({...st,_pid:p.id,_pt:p.title,_isSub:true});
+          }
+        });
+      }
+    });
+  }
+
   const allToday=[...overdueTs,...todayTs,...subAsTasks];
 
-  const doAddT=()=>{if(!tf.text.trim())return;upd(d=>({tasks:[{id:uid(),text:tf.text.trim(),cat:tf.cat,due:tf.due,pri:tf.pri,done:false,created:TD},...d.tasks]}));setTf({text:"",cat:"property",due:TD,pri:"normal"});setAddT(false);};
-  const tglDone=id=>upd(d=>({tasks:d.tasks.map(t=>t.id===id?{...t,done:!t.done}:t)}));
+  const doAddT=()=>{if(!tf.text.trim())return;upd(d=>({tasks:[{id:uid(),text:tf.text.trim(),cat:tf.cat,due:tf.due,pri:tf.pri,done:false,created:TD,recur:tf.recur||""},...d.tasks]}));setTf({text:"",cat:"property",due:TD,pri:"normal",recur:""});setAddT(false);};
+  const tglDone=id=>{upd(d=>({tasks:d.tasks.map(t=>t.id===id?{...t,done:!t.done}:t)}));};
   const delT=id=>upd(d=>({tasks:d.tasks.filter(t=>t.id!==id)}));
   const saveEdit=id=>{if(!editF.text?.trim())return;upd(d=>({tasks:d.tasks.map(t=>t.id===id?{...t,...editF}:t)}));setEditId(null);};
   const gc=k=>CATS.find(c=>c.key===k)||CATS[0];
-  const filtT=tasks.filter(t=>{if(vm==="today")return t.due===TD;if(vm==="upcoming")return t.due>TD&&!t.done;if(vm==="overdue")return t.due<TD&&!t.done;if(vm==="done")return t.done;return true;}).filter(t=>flt==="all"||t.cat===flt);
-  const filtSubs=vm==="today"?subAsTasks:vm==="overdue"?projects.flatMap(p=>p.subtasks.filter(st=>!st.done&&st.due&&st.due<TD).map(st=>({...st,_pid:p.id,_pt:p.title,_isSub:true}))):[];
 
-  // Projects
+  const filtT=tasks.filter(t=>{
+    if(vm==="today")return (t.due===TD||t.due<TD)&&!t.done;
+    if(vm==="upcoming")return t.due>TD&&!t.done;
+    if(vm==="overdue")return t.due<TD&&!t.done;
+    if(vm==="done")return t.done;
+    return true;
+  }).filter(t=>flt==="all"||t.cat===flt);
+
+  const filtSubs=(vm==="today"||vm==="overdue"||vm==="all")?subAsTasks:[];
+
+  // ─── PROJECTS ───
   const doAddP=()=>{if(!pf.title.trim())return;upd(d=>({projects:[...d.projects,{id:uid(),title:pf.title.trim(),deadline:pf.deadline,notes:pf.notes,status:"active",subtasks:[],created:TD}]}));setPf({title:"",deadline:"",notes:""});setAddP(false);};
   const updP=(id,patch)=>upd(d=>({projects:d.projects.map(p=>p.id===id?{...p,...patch}:p)}));
   const delP=id=>upd(d=>({projects:d.projects.filter(p=>p.id!==id)}));
@@ -234,36 +258,41 @@ function HQ(){
   const delSub=(pid,sid)=>upd(d=>({projects:d.projects.map(p=>p.id===pid?{...p,subtasks:p.subtasks.filter(st=>st.id!==sid)}:p)}));
   const activeP=projects.filter(p=>p.status==="active");
 
-  // Goals
+  // ─── GOALS ───
   const doAddG=()=>{if(!gf.text.trim())return;upd(d=>({goals:[...d.goals,{id:uid(),text:gf.text.trim(),deadline:gf.deadline,status:"In progress",created:TD}]}));setGf({text:"",deadline:""});setAddG(false);};
   const updG=(id,patch)=>upd(d=>({goals:d.goals.map(g=>g.id===id?{...g,...patch}:g)}));
   const delG=id=>upd(d=>({goals:d.goals.filter(g=>g.id!==id)}));
 
-  // Body
+  // ─── BODY ───
   const doAddB=()=>{if(!bw)return;upd(d=>({body:[{id:uid(),weight:parseFloat(bw),date:TD},...d.body]}));setBw("");setAddB(false);};
 
-  // Week
-  const wkD=WK.map(d=>{const dt=new Date(d);return{date:d,day:DS[dt.getDay()],num:dt.getDate(),done:customActs.filter(a=>isA(a,d)),today:d===TD,future:d>TD,note:notes[d]||""};});
+  // ─── TWO-WEEK DATA ───
+  const twData=TW.map(d=>{const dt=new Date(d);return{date:d,day:DS[dt.getDay()],num:dt.getDate(),
+    done:customActs.filter(a=>!!(acts[a+"-"+d])),
+    notes:customActs.reduce((o,a)=>{const n=actNotes[a+"-"+d];if(n)o[a]=n;return o;},{}),
+    genNote:notes[d]||"",today:d===TD,future:d>TD,isThisWeek:d>=thisWeekStart,
+  };});
+  const wkD=twData.filter(d=>d.isThisWeek);
   const wkDone=wkD.reduce((a,d)=>a+d.done.length,0);
   const wkPoss=customActs.length*wkD.filter(d=>!d.future).length;
   const wkRate=wkPoss>0?Math.round((wkDone/wkPoss)*100):0;
 
-  // Voice
+  // ─── VOICE ───
   const doSpk=()=>{if(spk){window.speechSynthesis.cancel();setSpk(false);}else if(brief){setSpk(true);speakText(brief);const iv=setInterval(()=>{if(!window.speechSynthesis.speaking){setSpk(false);clearInterval(iv);}},500);}};
 
-  // AI
+  // ─── AI ───
   const genBrief=()=>{
     if(!apiKey){setBrief("Add your API key — tap the key icon top right.");return;}
     setBLoad(true);
-    const ctx=`Date: ${DAYS[now.getDay()]} ${DN} ${MO[MI]} ${YR}\nTasks: ${todayTs.map(t=>t.text).join(", ")||"None"}\nOverdue: ${overdueTs.map(t=>t.text).join(", ")||"None"}\nProjects: ${activeP.map(p=>{const d=p.subtasks.filter(s=>s.done).length;return p.title+" ("+d+"/"+p.subtasks.length+")"}).join("; ")||"None"}\nGoals: ${goals.filter(g=>g.status!=="Done").map(g=>g.text).join(", ")||"None"}\nActivity: ${todayDone.join(", ")||"Nothing yet"} (${wkRate}% this week)\n${body.length>0?"Weight: "+body[0].weight+"kg":""}`;
-    callAI(apiKey,"You are Ash's assistant. He owns 8 properties in Leeds/Bradford, trains boxing/weights/cycling, cutting fat.\n\nMorning briefing with these headings:\n\nWEATHER\nLeeds today, one line.\n\nPRIORITIES\nTasks and overdue. Be firm.\n\nPROJECTS\nProgress.\n\nFITNESS\nActivity and weight.\n\nMOTIVATION\nOne sentence.\n\nNo emoji. No symbols. No markdown. Plain text. Under 180 words.","Briefing:\n\n"+ctx,txt=>{setBrief(txt);setBLoad(false);});
+    const ctx=`Date: ${DAYS[now.getDay()]} ${DN} ${MO[MI]} ${YR}\nTasks today: ${todayTs.map(t=>t.text).join(", ")||"None"}\nOverdue: ${overdueTs.map(t=>t.text).join(", ")||"None"}\nProjects: ${activeP.map(p=>{const d=p.subtasks.filter(s=>s.done).length;return p.title+" ("+d+"/"+p.subtasks.length+")"}).join("; ")||"None"}\nGoals: ${goals.filter(g=>g.status!=="Done").map(g=>g.text).join(", ")||"None"}\nActivity: ${todayDone.join(", ")||"Nothing yet"} (${wkRate}% this week)\n${body.length>0?"Weight: "+body[0].weight+"kg":""}`;
+    callAI(apiKey,"You are Ash's assistant. 8 properties Leeds/Bradford, trains boxing/weights/cycling, cutting fat.\n\nBriefing with headings:\nWEATHER - Leeds, one line.\nPRIORITIES - Tasks and overdue. Be firm.\nPROJECTS - Progress.\nFITNESS - Activity and weight.\nMOTIVATION - One sentence.\n\nNo emoji. No symbols. No markdown. Plain text. Under 180 words.","Briefing:\n\n"+ctx,txt=>{setBrief(txt);setBLoad(false);});
   };
 
   const genBodyAI=()=>{
     if(!apiKey||body.length<2){setAiRes(body.length<2?"Need 2+ weigh-ins.":"Add API key first.");return;}
     setAiLoad(true);
     callAI(apiKey,"Fitness advisor for Ash (boxing, weights, cycling, cutting fat). Honest, direct. No emoji. Plain text.",
-      "Weight (newest first): "+body.slice(0,10).map(b=>b.weight+"kg "+fmt(b.date)).join(", ")+"\nActivity rate: "+wkRate+"%\nThis week: "+wkD.filter(d=>!d.future).map(d=>d.day+": "+(d.done.join(",")||"rest")).join("; ")+"\n\nGive: 1) Trend 2) Body fat direction 3) What to change 4) Next week plan. Under 200 words.",
+      "Weight: "+body.slice(0,10).map(b=>b.weight+"kg "+fmt(b.date)).join(", ")+"\nActivity rate: "+wkRate+"%\nWeek: "+wkD.filter(d=>!d.future).map(d=>d.day+": "+(d.done.join(",")||"rest")).join("; ")+"\n\n1) Trend 2) Body fat direction 3) What to change 4) Next week plan. Under 200 words.",
       txt=>{setAiRes(txt);setAiLoad(false);});
   };
 
@@ -274,10 +303,11 @@ function HQ(){
     <div style={{padding:"28px 16px 0"}}>
       <p style={{fontSize:11,color:C.t2,fontWeight:600,letterSpacing:1.5,textTransform:"uppercase",margin:0}}>{DAYS[now.getDay()].toUpperCase()} {DN} {MO[MI].toUpperCase()}</p>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
-        <h1 style={{fontSize:28,fontFamily:"'Playfair Display',serif",fontWeight:500,margin:"4px 0 0",color:C.txt,letterSpacing:"-0.5px"}}>{grW}, Ash</h1>
+        <h1 style={{fontSize:28,fontFamily:"'Playfair Display',serif",fontWeight:500,margin:"4px 0 0",color:C.txt}}>{grW}, Ash</h1>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           {!apiKey&&<button onClick={()=>setShowKey(true)} style={{background:"none",border:"none",cursor:"pointer",fontSize:15,padding:0,color:C.amb}}>🔑</button>}
-          <span style={pill(todayDone.length===customActs.length?C.grnBg:C.ambBg,todayDone.length===customActs.length?C.grnTx:C.ambTx)}>{todayDone.length}/{customActs.length}</span>
+          {overdueC>0&&<span style={pl(C.redBg,C.redTx)}>{overdueC} overdue</span>}
+          <span style={pl(todayDone.length===customActs.length?C.grnBg:C.ambBg,todayDone.length===customActs.length?C.grnTx:C.ambTx)}>{todayDone.length}/{customActs.length}</span>
         </div>
       </div>
     </div>
@@ -291,11 +321,9 @@ function HQ(){
       }}>{t.i}<br/>{t.l}</button>)}
     </div>
 
-    {/* API KEY */}
     {showKey&&<div style={{margin:"0 16px 12px",padding:14,background:C.ambBg,border:"1px solid "+C.amb+"40",borderRadius:14}}>
-      <div style={{fontSize:13,fontWeight:600,color:C.ambTx,marginBottom:6}}>API key for AI</div>
-      <div style={{fontSize:12,color:C.ambTx,marginBottom:8}}>Get from console.anthropic.com</div>
-      <input value={keyIn} onChange={e=>setKeyIn(e.target.value)} type="password" placeholder="sk-ant-..." style={{...inp,marginBottom:8}}/>
+      <div style={{fontSize:13,fontWeight:600,color:C.ambTx,marginBottom:6}}>API key</div>
+      <input value={keyIn} onChange={e=>setKeyIn(e.target.value)} type="password" placeholder="sk-ant-..." style={inp}/>
       <div style={{display:"flex",gap:8}}>
         <button onClick={()=>{if(keyIn.trim()){localStorage.setItem("ash-hq-key",keyIn.trim());setApiKey(keyIn.trim());setShowKey(false);setKeyIn("");}}} style={{flex:1,padding:10,borderRadius:10,border:"none",cursor:"pointer",background:C.grn,color:"#fff",fontSize:13,fontWeight:600}}>Save</button>
         <button onClick={()=>setShowKey(false)} style={{padding:"10px 16px",borderRadius:10,border:"1px solid "+C.bdr,cursor:"pointer",background:"transparent",color:C.t2,fontSize:13}}>Cancel</button>
@@ -306,48 +334,36 @@ function HQ(){
 
     {/* ══════ TODAY ══════ */}
     {tab==="today"&&<>
-      {/* Property link */}
-      <div style={{background:"linear-gradient(135deg,#0F6E56,#085041)",borderRadius:14,padding:"14px 16px",marginBottom:12,cursor:"pointer"}} onClick={()=>{if(typeof sendPrompt==="function")sendPrompt("Open my property portfolio app");}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",color:"#fff"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <span style={{fontSize:20}}>🏠</span>
-            <div><div style={{fontSize:14,fontWeight:600}}>Property portfolio</div><div style={{fontSize:11,opacity:0.8}}>Rents, tenants, compliance</div></div>
-          </div>
-          <span style={{fontSize:18}}>→</span>
-        </div>
-      </div>
-
-      {/* Today's tasks */}
       <div style={card}>
         <div style={cHead}>
           <div><div style={{fontSize:15,fontWeight:700,color:C.txt}}>Today's tasks</div><div style={{fontSize:12,color:C.t2,marginTop:1}}>{allToday.length} to do</div></div>
           <button onClick={()=>{setTab("tasks");setAddT(true);}} style={{padding:"8px 14px",borderRadius:10,border:"none",cursor:"pointer",background:C.grn,color:"#fff",fontSize:12,fontWeight:600}}>+ Add</button>
         </div>
-        {allToday.length===0&&<div style={{padding:"20px 16px",textAlign:"center",color:C.t3,fontSize:13}}>Nothing scheduled — add a task or use templates</div>}
+        {allToday.length===0&&<div style={{padding:"20px 16px",textAlign:"center",color:C.t3,fontSize:13}}>Nothing to do — add a task or use templates</div>}
         {allToday.map((t,i)=>{
           const isSub=!!t._isSub;const c=isSub?null:gc(t.cat);const od=!isSub&&t.due<TD;
-          return <div key={t.id} style={{padding:"10px 16px",display:"flex",gap:10,alignItems:"center",borderBottom:i<allToday.length-1?"1px solid "+C.bdr:"none"}}>
+          return <div key={t.id+(isSub?"s":"")} style={{padding:"10px 16px",display:"flex",gap:10,alignItems:"center",borderBottom:i<allToday.length-1?"1px solid "+C.bdr:"none"}}>
             <button onClick={()=>{if(isSub)tglSub(t._pid,t.id);else tglDone(t.id);}} style={{width:22,height:22,borderRadius:7,flexShrink:0,border:"2px solid "+(od?C.red:isSub?C.vio:c.c),background:"transparent",cursor:"pointer"}}/>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:13,fontWeight:500,color:C.txt}}>{t.text}</div>
-              <div style={{display:"flex",gap:6,marginTop:3}}>
-                {isSub&&<span style={pill(C.vioBg,C.vioTx)}>{t._pt}</span>}
-                {!isSub&&<span style={pill(c.bg,c.tx)}>{c.label}</span>}
-                {!isSub&&t.pri==="urgent"&&<span style={pill(C.redBg,C.redTx)}>Urgent</span>}
+              <div style={{display:"flex",gap:6,marginTop:3,flexWrap:"wrap"}}>
+                {isSub&&<span style={pl(C.vioBg,C.vioTx)}>{t._pt}</span>}
+                {!isSub&&<span style={pl(c.bg,c.tx)}>{c.label}</span>}
+                {!isSub&&t.pri==="urgent"&&<span style={pl(C.redBg,C.redTx)}>Urgent</span>}
                 {od&&<span style={{fontSize:11,fontWeight:600,color:C.red}}>Overdue</span>}
+                {!isSub&&t.recur&&<span style={pl(C.bluBg,C.bluTx)}>{t.recur}</span>}
               </div>
             </div>
             <a href={calUrl(t.text,isSub?t.due:t.due)} target="_blank" rel="noopener" style={{fontSize:12,color:C.grn,textDecoration:"none",padding:4}}>📅</a>
           </div>;
         })}
         <div style={{padding:"8px 16px 12px",display:"flex",gap:6,overflowX:"auto"}}>
-          {TMPLS.slice(0,3).map((t,i)=><button key={i} onClick={()=>upd(d=>({tasks:[{id:uid(),text:t,cat:"property",due:TD,pri:"normal",done:false,created:TD},...d.tasks]}))} style={{padding:"5px 10px",borderRadius:99,border:"1px solid "+C.bdr,cursor:"pointer",background:"transparent",fontSize:11,color:C.t2,whiteSpace:"nowrap",fontFamily:"inherit"}}>+ {t}</button>)}
+          {TMPLS.slice(0,3).map((t,i)=><button key={i} onClick={()=>upd(d=>({tasks:[{id:uid(),text:t,cat:"property",due:TD,pri:"normal",done:false,created:TD,recur:""},...d.tasks]}))} style={{padding:"5px 10px",borderRadius:99,border:"1px solid "+C.bdr,cursor:"pointer",background:"transparent",fontSize:11,color:C.t2,whiteSpace:"nowrap",fontFamily:"inherit"}}>+ {t}</button>)}
         </div>
       </div>
 
-      {/* Active projects preview */}
       {activeP.length>0&&<div style={card}>
-        <div style={cHead}><div style={{fontSize:15,fontWeight:700,color:C.txt}}>Projects</div><span style={{fontSize:12,color:C.t2}}>{activeP.length} active</span></div>
+        <div style={cHead}><div style={{fontSize:15,fontWeight:700,color:C.txt}}>Projects</div></div>
         {activeP.map((p,i)=>{const d=p.subtasks.filter(s=>s.done).length,t=p.subtasks.length,pct=t>0?Math.round((d/t)*100):0;
           return <div key={p.id} style={{padding:"12px 16px",borderBottom:i<activeP.length-1?"1px solid "+C.bdr:"none"}}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
@@ -357,48 +373,37 @@ function HQ(){
             <div style={{background:C.bdr,borderRadius:99,height:6,overflow:"hidden"}}>
               <div style={{height:"100%",borderRadius:99,background:pct===100?C.grn:C.vio,width:pct+"%",transition:"width 0.3s"}}/>
             </div>
-            {p.deadline&&<div style={{fontSize:11,color:C.t3,marginTop:4}}>Due {fmt(p.deadline)}</div>}
           </div>;
         })}
       </div>}
 
-      {/* Activity — the nice 2x2 grid from original */}
+      {/* Activity 2x2 */}
       <div style={card}>
         <div style={{padding:14}}>
-          <div style={{fontSize:15,fontWeight:700,color:C.txt,marginBottom:12}}>Activity — {todayDone.length}/{customActs.length}</div>
+          <div style={{fontSize:15,fontWeight:700,color:C.txt,marginBottom:12}}>Activity</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-            {customActs.map(name=>{
-              const done=isA(name);
-              const st=actStyle(name);
-              return <button key={name} onClick={()=>tgl(name)} style={{
-                padding:"16px 10px",borderRadius:14,cursor:"pointer",fontFamily:"'DM Sans',system-ui",textAlign:"center",
-                border:done?"2px solid "+st.color:"1px solid "+C.bdr,
-                background:done?st.bg:"transparent",
-                color:done?st.tx:C.t3,
-                fontSize:13,fontWeight:600,transition:"all 0.15s",
-              }}>
-                {name}{done&&<span style={{display:"block",fontSize:16,marginTop:4,color:st.color}}>✓</span>}
-              </button>;
+            {customActs.map(name=>{const done=isA(name,TD);const st=actStyle(name);
+              return <button key={name} onClick={()=>tgl(name,TD)} style={{padding:"16px 10px",borderRadius:14,cursor:"pointer",fontFamily:"'DM Sans',system-ui",textAlign:"center",
+                border:done?"2px solid "+st.color:"1px solid "+C.bdr,background:done?st.bg:"transparent",color:done?st.tx:C.t3,fontSize:13,fontWeight:600,transition:"all 0.15s",
+              }}>{name}{done&&<span style={{display:"block",fontSize:16,marginTop:4,color:st.color}}>✓</span>}</button>;
             })}
           </div>
         </div>
       </div>
 
-      {/* Week */}
+      {/* Week mini */}
       <div style={card}>
         <div style={{padding:14}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
             <div style={{fontSize:15,fontWeight:700,color:C.txt}}>This week</div>
-            <span style={pill(wkRate>=50?C.grnBg:C.ambBg,wkRate>=50?C.grnTx:C.ambTx)}>{wkRate}%</span>
+            <span style={pl(wkRate>=50?C.grnBg:C.ambBg,wkRate>=50?C.grnTx:C.ambTx)}>{wkRate}%</span>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
-            {wkD.map(d=>{
-              const full=d.done.length===customActs.length,some=d.done.length>0;
+            {wkD.map(d=>{const full=d.done.length===customActs.length,some=d.done.length>0;
               return <div key={d.date} style={{textAlign:"center",opacity:d.future?0.3:1}}>
                 <div style={{fontSize:9,color:d.today?C.txt:C.t3,fontWeight:d.today?700:500,marginBottom:3}}>{d.day}</div>
                 <div style={{width:30,height:30,borderRadius:10,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,
-                  background:full?C.grnBg:some?C.ambBg:"transparent",color:full?C.grnTx:some?C.ambTx:C.t3,
-                  border:d.today?"2px solid "+C.txt:"1px solid "+C.bdr,
+                  background:full?C.grnBg:some?C.ambBg:"transparent",color:full?C.grnTx:some?C.ambTx:C.t3,border:d.today?"2px solid "+C.txt:"1px solid "+C.bdr,
                 }}>{d.done.length||"—"}</div>
               </div>;
             })}
@@ -406,20 +411,18 @@ function HQ(){
         </div>
       </div>
 
-      {/* Goals preview */}
       {goals.filter(g=>g.status!=="Done").length>0&&<div style={card}>
         <div style={{padding:"14px 16px"}}><div style={{fontSize:15,fontWeight:700,color:C.txt,marginBottom:8}}>Goals</div>
         {goals.filter(g=>g.status!=="Done").map(g=>{
           const sm={"In progress":{bg:C.vioBg,c:C.vioTx},"Almost done":{bg:C.grnBg,c:C.grnTx},"On hold":{bg:C.ambBg,c:C.ambTx}};
           const sc=sm[g.status]||sm["In progress"];
           return <div key={g.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}>
-            <span style={{fontSize:13,fontWeight:500,color:C.txt}}>{g.text}</span>
-            <span style={pill(sc.bg,sc.c)}>{g.status}</span>
+            <span style={{fontSize:13,fontWeight:500,color:C.txt}}>{g.text}</span><span style={pl(sc.bg,sc.c)}>{g.status}</span>
           </div>;
         })}</div>
       </div>}
 
-      {/* AI Briefing — collapsed */}
+      {/* AI collapsed */}
       <div style={card}>
         <button onClick={()=>setShowBrief(!showBrief)} style={{width:"100%",padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",border:"none",cursor:"pointer",background:"transparent",fontFamily:"inherit"}}>
           <div style={{textAlign:"left"}}><div style={{fontSize:15,fontWeight:700,color:C.txt}}>AI Morning Briefing</div><div style={{fontSize:12,color:C.t2,marginTop:1}}>{brief?"Tap to view":"Generate your briefing"}</div></div>
@@ -446,10 +449,10 @@ function HQ(){
         {CATS.map(c=><button key={c.key} onClick={()=>setFlt(c.key)} style={{padding:"5px 12px",borderRadius:99,cursor:"pointer",fontSize:11,fontWeight:600,fontFamily:"inherit",border:flt===c.key?"2px solid "+c.c:"1px solid "+C.bdr,background:flt===c.key?c.bg:"transparent",color:flt===c.key?c.c:C.t2,whiteSpace:"nowrap"}}>{c.icon} {c.label}</button>)}
       </div>
 
-      {filtSubs.length>0&&filtSubs.map(t=><div key={t.id} style={{...card,borderLeft:"3px solid "+C.vio,marginBottom:6}}>
+      {filtSubs.map(t=><div key={t.id+"s"} style={{...card,borderLeft:"3px solid "+C.vio,marginBottom:6}}>
         <div style={{padding:"10px 14px",display:"flex",gap:10,alignItems:"center"}}>
           <button onClick={()=>tglSub(t._pid,t.id)} style={{width:22,height:22,borderRadius:7,flexShrink:0,border:"2px solid "+C.vio,background:"transparent",cursor:"pointer"}}/>
-          <div style={{flex:1}}><div style={{fontSize:13,fontWeight:500,color:C.txt}}>{t.text}</div><span style={pill(C.vioBg,C.vioTx)}>{t._pt}</span></div>
+          <div style={{flex:1}}><div style={{fontSize:13,fontWeight:500,color:C.txt}}>{t.text}</div><span style={pl(C.vioBg,C.vioTx)}>{t._pt}</span>{t.due&&<span style={{fontSize:11,color:C.t3,marginLeft:6}}>{fmt(t.due)}</span>}</div>
           <a href={calUrl(t.text,t.due)} target="_blank" rel="noopener" style={{fontSize:11,color:C.grn,textDecoration:"none"}}>📅</a>
         </div>
       </div>)}
@@ -459,13 +462,16 @@ function HQ(){
       {filtT.map(t=>{const c=gc(t.cat);const od=!t.done&&t.due<TD;
         return <div key={t.id} style={{...card,borderLeft:"3px solid "+(od?C.red:c.c),opacity:t.done?0.5:1,marginBottom:6}}>
           {editId===t.id?<div style={{padding:14}}>
-            <input value={editF.text||""} onChange={e=>setEditF(p=>({...p,text:e.target.value}))} style={{...inp}} autoFocus/>
+            <input value={editF.text||""} onChange={e=>setEditF(p=>({...p,text:e.target.value}))} style={inp} autoFocus/>
             <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
               {CATS.map(cc=><button key={cc.key} onClick={()=>setEditF(p=>({...p,cat:cc.key}))} style={{padding:"5px 10px",borderRadius:99,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",border:editF.cat===cc.key?"2px solid "+cc.c:"1px solid "+C.bdr,background:editF.cat===cc.key?cc.bg:"transparent",color:editF.cat===cc.key?cc.c:C.t2}}>{cc.icon} {cc.label}</button>)}
             </div>
             <div style={{display:"flex",gap:8,marginBottom:8}}>
               <input type="date" value={editF.due||""} onChange={e=>setEditF(p=>({...p,due:e.target.value}))} style={{...inp,flex:1}}/>
               <button onClick={()=>setEditF(p=>({...p,pri:p.pri==="urgent"?"normal":"urgent"}))} style={{padding:"10px 12px",borderRadius:10,cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit",border:editF.pri==="urgent"?"2px solid "+C.red:"1px solid "+C.bdr,background:editF.pri==="urgent"?C.redBg:"transparent",color:editF.pri==="urgent"?C.redTx:C.t2}}>Urgent</button>
+            </div>
+            <div style={{display:"flex",gap:6,marginBottom:8}}>
+              {["","weekly","monthly"].map(r=><button key={r} onClick={()=>setEditF(p=>({...p,recur:r}))} style={{padding:"5px 10px",borderRadius:99,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",border:editF.recur===r?"2px solid "+C.blu:"1px solid "+C.bdr,background:editF.recur===r?C.bluBg:"transparent",color:editF.recur===r?C.bluTx:C.t2}}>{r||"One-off"}</button>)}
             </div>
             <div style={{display:"flex",gap:8}}>
               <button onClick={()=>saveEdit(t.id)} style={{flex:1,padding:10,borderRadius:10,border:"none",cursor:"pointer",background:C.grn,color:"#fff",fontSize:13,fontWeight:600}}>Save</button>
@@ -477,15 +483,16 @@ function HQ(){
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:13,fontWeight:500,color:C.txt,textDecoration:t.done?"line-through":"none"}}>{t.text}</div>
               <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap"}}>
-                <span style={pill(c.bg,c.tx)}>{c.label}</span>
-                {t.pri==="urgent"&&<span style={pill(C.redBg,C.redTx)}>Urgent</span>}
+                <span style={pl(c.bg,c.tx)}>{c.label}</span>
+                {t.pri==="urgent"&&<span style={pl(C.redBg,C.redTx)}>Urgent</span>}
+                {t.recur&&<span style={pl(C.bluBg,C.bluTx)}>{t.recur}</span>}
                 {od&&<span style={{fontSize:11,fontWeight:600,color:C.red}}>Overdue</span>}
                 {t.due!==TD&&!od&&<span style={{fontSize:11,color:C.t3}}>{fmt(t.due)}</span>}
               </div>
             </div>
             <div style={{display:"flex",gap:4,flexShrink:0}}>
               <a href={calUrl(t.text,t.due)} target="_blank" rel="noopener" style={{width:26,height:26,borderRadius:8,background:C.grnBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,textDecoration:"none"}}>📅</a>
-              <button onClick={()=>{setEditId(t.id);setEditF({text:t.text,cat:t.cat,due:t.due,pri:t.pri});}} style={{width:26,height:26,borderRadius:8,border:"none",background:C.bdr,cursor:"pointer",fontSize:11,color:C.t2,display:"flex",alignItems:"center",justifyContent:"center"}}>✏</button>
+              <button onClick={()=>{setEditId(t.id);setEditF({text:t.text,cat:t.cat,due:t.due,pri:t.pri,recur:t.recur||""});}} style={{width:26,height:26,borderRadius:8,border:"none",background:C.bdr,cursor:"pointer",fontSize:11,color:C.t2,display:"flex",alignItems:"center",justifyContent:"center"}}>✏</button>
               <button onClick={()=>delT(t.id)} style={{width:26,height:26,borderRadius:8,border:"none",background:C.redBg,cursor:"pointer",fontSize:11,color:C.redTx,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
             </div>
           </div>}
@@ -496,16 +503,19 @@ function HQ(){
         <button onClick={()=>setAddT(true)} style={{flex:1,padding:12,borderRadius:12,border:"2px dashed "+C.bdr,cursor:"pointer",background:"transparent",fontSize:13,fontWeight:600,color:C.t2,fontFamily:"inherit"}}>+ New task</button>
         <button onClick={()=>setTmpl(!tmpl)} style={{padding:"12px 16px",borderRadius:12,border:"1px solid "+C.bdr,cursor:"pointer",background:"transparent",fontSize:13,fontWeight:600,color:C.t2,fontFamily:"inherit"}}>Templates</button>
       </div>}
-      {tmpl&&<div style={{...card,padding:14,marginTop:8}}><div style={{display:"flex",flexWrap:"wrap",gap:6}}>{TMPLS.map((t,i)=><button key={i} onClick={()=>{upd(d=>({tasks:[{id:uid(),text:t,cat:"property",due:TD,pri:"normal",done:false,created:TD},...d.tasks]}));setTmpl(false);}} style={{padding:"5px 10px",borderRadius:99,border:"1px solid "+C.grn+"40",background:C.grnBg,color:C.grnTx,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>+ {t}</button>)}</div></div>}
+      {tmpl&&<div style={{...card,padding:14,marginTop:8}}><div style={{display:"flex",flexWrap:"wrap",gap:6}}>{TMPLS.map((t,i)=><button key={i} onClick={()=>{upd(d=>({tasks:[{id:uid(),text:t,cat:"property",due:TD,pri:"normal",done:false,created:TD,recur:""},...d.tasks]}));setTmpl(false);}} style={{padding:"5px 10px",borderRadius:99,border:"1px solid "+C.grn+"40",background:C.grnBg,color:C.grnTx,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>+ {t}</button>)}</div></div>}
 
       {addT&&<div style={{...card,padding:14,marginTop:8}}>
         <input value={tf.text} onChange={e=>setTf(f=>({...f,text:e.target.value}))} onKeyDown={e=>e.key==="Enter"&&doAddT()} placeholder="What needs doing?" style={{...inp,fontSize:14}} autoFocus/>
         <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
           {CATS.map(c=><button key={c.key} onClick={()=>setTf(f=>({...f,cat:c.key}))} style={{padding:"5px 10px",borderRadius:99,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",border:tf.cat===c.key?"2px solid "+c.c:"1px solid "+C.bdr,background:tf.cat===c.key?c.bg:"transparent",color:tf.cat===c.key?c.c:C.t2}}>{c.icon} {c.label}</button>)}
         </div>
-        <div style={{display:"flex",gap:8,marginBottom:10}}>
+        <div style={{display:"flex",gap:8,marginBottom:8}}>
           <input type="date" value={tf.due} onChange={e=>setTf(f=>({...f,due:e.target.value}))} style={{...inp,flex:1}}/>
           <button onClick={()=>setTf(f=>({...f,pri:f.pri==="urgent"?"normal":"urgent"}))} style={{padding:"10px 14px",borderRadius:10,cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit",border:tf.pri==="urgent"?"2px solid "+C.red:"1px solid "+C.bdr,background:tf.pri==="urgent"?C.redBg:"transparent",color:tf.pri==="urgent"?C.redTx:C.t2}}>Urgent</button>
+        </div>
+        <div style={{display:"flex",gap:6,marginBottom:10}}>
+          {["","weekly","monthly"].map(r=><button key={r} onClick={()=>setTf(f=>({...f,recur:r}))} style={{padding:"5px 12px",borderRadius:99,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",border:tf.recur===r?"2px solid "+C.blu:"1px solid "+C.bdr,background:tf.recur===r?C.bluBg:"transparent",color:tf.recur===r?C.bluTx:C.t2}}>{r||"One-off"}</button>)}
         </div>
         <div style={{display:"flex",gap:8}}>
           <button onClick={doAddT} style={{flex:1,padding:12,borderRadius:10,border:"none",cursor:"pointer",background:C.grn,color:"#fff",fontSize:14,fontWeight:600}}>Add task</button>
@@ -514,7 +524,7 @@ function HQ(){
       </div>}
     </>}
 
-    {/* ══════ PROJECTS ══════ */}
+    {/* ══════ PROJECTS & GOALS ══════ */}
     {tab==="proj"&&<>
       <div style={{fontSize:16,fontWeight:700,color:C.txt,marginBottom:10}}>Projects</div>
       {projects.map(p=>{const d=p.subtasks.filter(s=>s.done).length,t=p.subtasks.length,pct=t>0?Math.round((d/t)*100):0;
@@ -536,17 +546,13 @@ function HQ(){
                   {p.notes&&<div style={{fontSize:12,color:C.t2,marginTop:2}}>{p.notes}</div>}
                 </div>
                 <div style={{display:"flex",gap:4}}>
-                  <select value={p.status} onChange={e=>updP(p.id,{status:e.target.value})} style={{padding:"4px 8px",borderRadius:8,border:"1px solid "+C.bdr,background:C.card,color:C.txt,fontSize:11,fontWeight:600,outline:"none"}}>
-                    <option value="active">Active</option><option value="on-hold">On hold</option><option value="done">Done</option>
-                  </select>
+                  <select value={p.status} onChange={e=>updP(p.id,{status:e.target.value})} style={{padding:"4px 8px",borderRadius:8,border:"1px solid "+C.bdr,background:C.card,color:C.txt,fontSize:11,fontWeight:600,outline:"none"}}><option value="active">Active</option><option value="on-hold">On hold</option><option value="done">Done</option></select>
                   <button onClick={()=>{setEditPid(p.id);setEditPf({title:p.title,deadline:p.deadline,notes:p.notes});}} style={{width:26,height:26,borderRadius:8,border:"none",background:C.bdr,cursor:"pointer",fontSize:11,color:C.t2,display:"flex",alignItems:"center",justifyContent:"center"}}>✏</button>
                   <button onClick={()=>delP(p.id)} style={{width:26,height:26,borderRadius:8,border:"none",background:C.redBg,cursor:"pointer",fontSize:11,color:C.redTx,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
                 </div>
               </div>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <div style={{flex:1,background:C.bdr,borderRadius:99,height:7,overflow:"hidden"}}>
-                  <div style={{height:"100%",borderRadius:99,background:pct===100?C.grn:C.vio,width:pct+"%",transition:"width 0.3s"}}/>
-                </div>
+                <div style={{flex:1,background:C.bdr,borderRadius:99,height:7,overflow:"hidden"}}><div style={{height:"100%",borderRadius:99,background:pct===100?C.grn:C.vio,width:pct+"%",transition:"width 0.3s"}}/></div>
                 <span style={{fontSize:12,fontWeight:600,color:pct===100?C.grn:C.vio}}>{pct}%</span>
               </div>
             </div>
@@ -584,14 +590,9 @@ function HQ(){
       {goals.map(g=>{const sm={"In progress":{bg:C.vioBg,c:C.vioTx},"Almost done":{bg:C.grnBg,c:C.grnTx},"On hold":{bg:C.ambBg,c:C.ambTx},"Done":{bg:C.grnBg,c:C.grnTx}};const sc=sm[g.status]||sm["In progress"];
         return <div key={g.id} style={{...card,opacity:g.status==="Done"?0.5:1}}>
           <div style={{padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-            <div style={{flex:1}}>
-              <div style={{fontSize:14,fontWeight:600,color:C.txt,textDecoration:g.status==="Done"?"line-through":"none"}}>{g.text}</div>
-              {g.deadline&&<div style={{fontSize:11,color:C.t2,marginTop:3}}>Deadline: {fmt(g.deadline)}</div>}
-            </div>
+            <div style={{flex:1}}><div style={{fontSize:14,fontWeight:600,color:C.txt,textDecoration:g.status==="Done"?"line-through":"none"}}>{g.text}</div>{g.deadline&&<div style={{fontSize:11,color:C.t2,marginTop:3}}>Deadline: {fmt(g.deadline)}</div>}</div>
             <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
-              <select value={g.status} onChange={e=>updG(g.id,{status:e.target.value})} style={{padding:"4px 8px",borderRadius:8,border:"1px solid "+sc.c+"40",background:sc.bg,color:sc.c,fontSize:11,fontWeight:600,outline:"none",cursor:"pointer"}}>
-                <option value="In progress">In progress</option><option value="Almost done">Almost done</option><option value="On hold">On hold</option><option value="Done">Done</option>
-              </select>
+              <select value={g.status} onChange={e=>updG(g.id,{status:e.target.value})} style={{padding:"4px 8px",borderRadius:8,border:"1px solid "+sc.c+"40",background:sc.bg,color:sc.c,fontSize:11,fontWeight:600,outline:"none",cursor:"pointer"}}><option value="In progress">In progress</option><option value="Almost done">Almost done</option><option value="On hold">On hold</option><option value="Done">Done</option></select>
               <button onClick={()=>delG(g.id)} style={{width:24,height:24,borderRadius:8,border:"none",background:C.redBg,cursor:"pointer",fontSize:11,color:C.redTx,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
             </div>
           </div>
@@ -609,47 +610,84 @@ function HQ(){
 
     {/* ══════ ACTIVITY ══════ */}
     {tab==="activity"&&<>
+      {/* Date selector */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,marginBottom:14}}>
+        <button onClick={()=>setActDate(dateShift(actDate,-1))} style={{width:32,height:32,borderRadius:10,border:"1px solid "+C.bdr,cursor:"pointer",background:C.card,fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",color:C.txt}}>←</button>
+        <div style={{textAlign:"center"}}>
+          <div style={{fontSize:15,fontWeight:700,color:C.txt}}>{actDate===TD?"Today":fmtFull(actDate)}</div>
+          {actDate!==TD&&<button onClick={()=>setActDate(TD)} style={{fontSize:11,color:C.grn,fontWeight:600,background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",marginTop:2}}>Back to today</button>}
+        </div>
+        <button onClick={()=>{if(actDate<TD)setActDate(dateShift(actDate,1));}} style={{width:32,height:32,borderRadius:10,border:"1px solid "+C.bdr,cursor:"pointer",background:C.card,fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",color:C.txt,opacity:actDate>=TD?0.3:1}}>→</button>
+      </div>
+
+      {/* Activity toggles with notes */}
       <div style={card}>
-        <div style={cHead}><div style={{fontSize:15,fontWeight:700,color:C.txt}}>Today</div><span style={pill(todayDone.length===customActs.length?C.grnBg:C.ambBg,todayDone.length===customActs.length?C.grnTx:C.ambTx)}>{todayDone.length}/{customActs.length}</span></div>
-        <div style={{padding:"14px 16px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-          {customActs.map(name=>{const done=isA(name);const st=actStyle(name);
-            return <button key={name} onClick={()=>tgl(name)} style={{padding:"18px 10px",borderRadius:14,cursor:"pointer",fontFamily:"'DM Sans',system-ui",textAlign:"center",fontSize:13,fontWeight:600,
-              border:done?"2px solid "+st.color:"1px solid "+C.bdr,background:done?st.bg:"transparent",color:done?st.tx:C.t3,transition:"all 0.15s",
-            }}>{name}{done&&<div style={{fontSize:18,marginTop:6,color:st.color}}>✓</div>}</button>;
+        <div style={cHead}><div style={{fontSize:15,fontWeight:700,color:C.txt}}>Activities</div><span style={pl(customActs.filter(a=>isA(a)).length===customActs.length?C.grnBg:C.ambBg,customActs.filter(a=>isA(a)).length===customActs.length?C.grnTx:C.ambTx)}>{customActs.filter(a=>isA(a)).length}/{customActs.length}</span></div>
+        <div style={{padding:"14px 16px"}}>
+          {customActs.map(name=>{const done=isA(name);const st=actStyle(name);const note=getActNote(name);const isEditing=editAct===name+"-"+actDate;const isRenaming=editAct==="rename-"+name;
+            return <div key={name} style={{marginBottom:10}}>
+              <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                <button onClick={()=>tgl(name)} style={{flex:1,padding:"12px 10px",borderRadius:12,cursor:"pointer",fontFamily:"'DM Sans',system-ui",textAlign:"left",fontSize:13,fontWeight:600,
+                  border:done?"2px solid "+st.color:"1px solid "+C.bdr,background:done?st.bg:"transparent",color:done?st.tx:C.t3,display:"flex",justifyContent:"space-between",alignItems:"center",
+                }}><span>{name}</span>{done&&<span style={{color:st.color}}>✓</span>}</button>
+                <button onClick={()=>{if(isRenaming){setEditAct(null);}else{setEditAct("rename-"+name);setActNoteIn(name);}}} style={{width:28,height:28,borderRadius:8,border:"1px solid "+C.bdr,cursor:"pointer",background:C.card,fontSize:10,color:C.t2,display:"flex",alignItems:"center",justifyContent:"center"}}>✏</button>
+                {done&&<button onClick={()=>{if(isEditing){setEditAct(null);}else{setEditAct(name+"-"+actDate);setActNoteIn(note);}}} style={{width:28,height:28,borderRadius:8,border:"1px solid "+C.bdr,cursor:"pointer",background:note?st.bg:C.card,fontSize:10,color:note?st.tx:C.t3,display:"flex",alignItems:"center",justifyContent:"center"}}>{note?"📝":"+"}</button>}
+              </div>
+              {isRenaming&&<div style={{display:"flex",gap:8,marginTop:6}}>
+                <input value={actNoteIn} onChange={e=>setActNoteIn(e.target.value)} placeholder="New name" style={{...inp,flex:1,marginBottom:0,fontSize:12}} autoFocus/>
+                <button onClick={()=>{
+                  const newName=actNoteIn.trim();
+                  if(newName&&newName!==name){
+                    upd(d=>{
+                      const newActs={...d.acts};const newNotes={...d.actNotes};
+                      Object.keys(newActs).forEach(k=>{if(k.startsWith(name+"-")){newActs[k.replace(name+"-",newName+"-")]=newActs[k];delete newActs[k];}});
+                      Object.keys(newNotes).forEach(k=>{if(k.startsWith(name+"-")){newNotes[k.replace(name+"-",newName+"-")]=newNotes[k];delete newNotes[k];}});
+                      return{customActs:d.customActs.map(a=>a===name?newName:a),acts:newActs,actNotes:newNotes};
+                    });
+                  }
+                  setEditAct(null);
+                }} style={{padding:"8px 12px",borderRadius:8,border:"none",cursor:"pointer",background:C.grn,color:"#fff",fontSize:12,fontWeight:600}}>Save</button>
+                <button onClick={()=>{upd(d=>({customActs:d.customActs.filter(a=>a!==name)}));setEditAct(null);}} style={{padding:"8px 10px",borderRadius:8,border:"none",cursor:"pointer",background:C.redBg,color:C.redTx,fontSize:12,fontWeight:600}}>Delete</button>
+              </div>}
+              {isEditing&&<div style={{display:"flex",gap:8,marginTop:6}}>
+                <input value={actNoteIn} onChange={e=>setActNoteIn(e.target.value)} placeholder={"Detail: e.g. "+name+" — trained back, 45 mins"} style={{...inp,flex:1,marginBottom:0,fontSize:12}} autoFocus/>
+                <button onClick={()=>{setActNote(name,actNoteIn);setEditAct(null);}} style={{padding:"8px 12px",borderRadius:8,border:"none",cursor:"pointer",background:C.grn,color:"#fff",fontSize:12,fontWeight:600}}>Save</button>
+              </div>}
+              {!isEditing&&!isRenaming&&note&&<div style={{fontSize:11,color:st.tx,marginTop:4,paddingLeft:4}}>{note}</div>}
+            </div>;
           })}
         </div>
-        <div style={{padding:"8px 16px 12px",display:"flex",justifyContent:"space-between"}}>
-          {addAct?<div style={{display:"flex",gap:8,flex:1}}>
+        <div style={{padding:"4px 16px 12px",borderTop:"1px solid "+C.bdr}}>
+          {addAct?<div style={{display:"flex",gap:8}}>
             <input value={actN} onChange={e=>setActN(e.target.value)} placeholder="Activity name" style={{...inp,flex:1,marginBottom:0}} autoFocus/>
             <button onClick={()=>{if(actN.trim()){upd(d=>({customActs:[...d.customActs,actN.trim()]}));setActN("");setAddAct(false);}}} style={{padding:"8px 14px",borderRadius:8,border:"none",cursor:"pointer",background:C.grn,color:"#fff",fontSize:12,fontWeight:600}}>Add</button>
-            <button onClick={()=>setAddAct(false)} style={{padding:"8px 10px",borderRadius:8,border:"1px solid "+C.bdr,cursor:"pointer",background:"transparent",color:C.t2,fontSize:12}}>×</button>
-          </div>:<>
+          </div>:
             <button onClick={()=>setAddAct(true)} style={{fontSize:12,color:C.grn,fontWeight:600,background:"none",border:"none",cursor:"pointer",fontFamily:"inherit"}}>+ Add activity</button>
-            {customActs.length>1&&<button onClick={()=>{const n=prompt("Type the activity name to remove:");if(n)upd(d=>({customActs:d.customActs.filter(a=>a!==n)}));}} style={{fontSize:12,color:C.red,fontWeight:600,background:"none",border:"none",cursor:"pointer",fontFamily:"inherit"}}>Remove</button>}
-          </>}
-        </div>
-        <div style={{padding:"4px 16px 14px",borderTop:"1px solid "+C.bdr}}>
-          {noteEd?<div style={{display:"flex",gap:8,marginTop:8}}>
-            <input value={noteTx} onChange={e=>setNoteTx(e.target.value)} placeholder="How was today?" style={{...inp,flex:1,marginBottom:0}} autoFocus/>
-            <button onClick={()=>{if(noteTx.trim())upd(d=>{const n={...d.notes};n[TD]=noteTx.trim();return{notes:n};});setNoteEd(false);}} style={{padding:"8px 14px",borderRadius:8,border:"none",cursor:"pointer",background:C.grn,color:"#fff",fontSize:12,fontWeight:600}}>Save</button>
-          </div>:<button onClick={()=>{setNoteTx(notes[TD]||"");setNoteEd(true);}} style={{fontSize:12,color:notes[TD]?C.txt:C.grn,fontWeight:notes[TD]?400:600,background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",marginTop:8,padding:0}}>{notes[TD]||"+ Add note"}</button>}
+          }
         </div>
       </div>
 
-      {/* Week */}
+      {/* Two week view */}
       <div style={card}>
-        <div style={cHead}><div style={{fontSize:15,fontWeight:700,color:C.txt}}>This week</div><span style={pill(wkRate>=50?C.grnBg:C.ambBg,wkRate>=50?C.grnTx:C.ambTx)}>{wkRate}%</span></div>
-        {wkD.map((d,i)=><div key={d.date} style={{padding:"10px 16px",display:"flex",alignItems:"center",gap:10,borderBottom:i<6?"1px solid "+C.bdr:"none",opacity:d.future?0.3:1}}>
-          <div style={{width:36,textAlign:"center"}}>
-            <div style={{fontSize:10,fontWeight:d.today?700:500,color:d.today?C.txt:C.t2}}>{d.day}</div>
-            <div style={{fontSize:14,fontWeight:700,color:d.today?C.txt:C.t3}}>{d.num}</div>
-          </div>
-          <div style={{flex:1,display:"flex",gap:4,flexWrap:"wrap"}}>
-            {d.done.length>0?d.done.map(a=>{const st=actStyle(a);return <span key={a} style={pill(st.bg,st.tx)}>{a}</span>;}):
-            <span style={{fontSize:11,color:C.t3}}>{d.future?"—":"Rest day"}</span>}
-          </div>
-          {d.note&&<span style={{fontSize:10,color:C.t2,maxWidth:80,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.note}</span>}
-        </div>)}
+        <div style={cHead}><div style={{fontSize:15,fontWeight:700,color:C.txt}}>Last 2 weeks</div><span style={pl(C.grnBg,C.grnTx)}>{wkRate}% this wk</span></div>
+        {twData.map((d,i)=>{
+          const hasNotes=Object.keys(d.notes).length>0;
+          return <div key={d.date} style={{borderBottom:i<13?"1px solid "+C.bdr:"none",opacity:d.future?0.3:1}}>
+            <div style={{padding:"10px 16px",display:"flex",alignItems:"center",gap:10,cursor:"pointer"}} onClick={()=>setActDate(d.date)}>
+              <div style={{width:36,textAlign:"center"}}>
+                <div style={{fontSize:10,fontWeight:d.today?700:500,color:d.today?C.txt:d.isThisWeek?C.t2:C.t3}}>{d.day}</div>
+                <div style={{fontSize:14,fontWeight:700,color:d.today?C.txt:d.isThisWeek?C.t2:C.t3}}>{d.num}</div>
+              </div>
+              <div style={{flex:1,display:"flex",gap:4,flexWrap:"wrap"}}>
+                {d.done.length>0?d.done.map(a=>{const st=actStyle(a);return <span key={a} style={pl(st.bg,st.tx)}>{a}</span>;}):
+                <span style={{fontSize:11,color:C.t3}}>{d.future?"—":"Rest day"}</span>}
+              </div>
+            </div>
+            {hasNotes&&<div style={{padding:"0 16px 8px 62px"}}>
+              {Object.entries(d.notes).map(([act,note])=><div key={act} style={{fontSize:11,color:C.t2}}><span style={{fontWeight:600}}>{act}:</span> {note}</div>)}
+            </div>}
+          </div>;
+        })}
       </div>
 
       {/* Weight */}
