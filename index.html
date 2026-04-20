@@ -80,24 +80,13 @@ const DEFAULT_ACTS=[
 ];
 
 const TMPLS=["Check rent payments","Chase late rent","Review compliance","Property inspections","Review finances","Plan the week"];
-const TABS=[{k:"today",l:"Today",i:"☀"},{k:"tasks",l:"Tasks",i:"✓"},{k:"proj",l:"Projects",i:"📋"},{k:"activity",l:"Activity",i:"🏃"}];
+const TABS=[{k:"today",l:"Today",i:"☀"},{k:"tasks",l:"Tasks",i:"✓"},{k:"proj",l:"Projects",i:"📋"},{k:"activity",l:"Activity",i:"🏃"},{k:"protein",l:"Protein",i:"🍗"}];
 
 // ═══ STYLES ═══
 const card={background:C.card,borderRadius:16,border:"1px solid "+C.bdr,marginBottom:12,overflow:"hidden"};
 const cHead={padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid "+C.bdr};
 const pl=(bg,c)=>({display:"inline-flex",padding:"3px 9px",borderRadius:99,fontSize:11,fontWeight:600,background:bg,color:c});
 const inp={width:"100%",border:"1px solid "+C.bdr,borderRadius:12,padding:"10px 12px",fontSize:14,background:C.card,color:C.txt,outline:"none",marginBottom:8};
-
-// ═══ VOICE ═══
-function speakText(text){
-  if(!window.speechSynthesis)return;window.speechSynthesis.cancel();
-  const clean=text.replace(/[^\x20-\x7E\n]/g," ").replace(/[*#_~`>|]/g,"").replace(/\n{2,}/g,". ").replace(/\n/g,". ").replace(/\s{2,}/g," ").trim();
-  const parts=clean.match(/[^.!?]+[.!?]+/g)||[clean];let i=0;
-  function next(){if(i>=parts.length)return;const u=new SpeechSynthesisUtterance(parts[i].trim());u.lang="en-GB";u.rate=0.93;
-    const v=window.speechSynthesis.getVoices();const gb=v.find(x=>x.lang==="en-GB")||v.find(x=>x.lang.startsWith("en"));if(gb)u.voice=gb;
-    u.onend=()=>{i++;next();};u.onerror=()=>{i++;next();};window.speechSynthesis.speak(u);}
-  if(window.speechSynthesis.getVoices().length===0){window.speechSynthesis.onvoiceschanged=next;}else{next();}
-}
 
 // ═══ AI ═══
 function callAI(key,sys,msg,cb){
@@ -152,7 +141,6 @@ function HQ(){
   const sr=useRef(null);
 
   // UI
-  const[brief,setBrief]=useState(null);const[bLoad,setBLoad]=useState(false);const[spk,setSpk]=useState(false);const[showBrief,setShowBrief]=useState(false);
   const[addT,setAddT]=useState(false);const[tf,setTf]=useState({text:"",cat:"property",due:TD,pri:"normal",recur:""});
   const[flt,setFlt]=useState("all");const[vm,setVm]=useState("today");const[editId,setEditId]=useState(null);const[editF,setEditF]=useState({});
   const[addP,setAddP]=useState(false);const[pf,setPf]=useState({title:"",deadline:"",notes:""});
@@ -161,36 +149,39 @@ function HQ(){
   const[addG,setAddG]=useState(false);const[gf,setGf]=useState({text:"",deadline:""});
   const[addB,setAddB]=useState(false);const[bw,setBw]=useState("");
   const[actDate,setActDate]=useState(TD);
-  const[editAct,setEditAct]=useState(null); // which activity is being noted
+  const[editAct,setEditAct]=useState(null);
   const[actNoteIn,setActNoteIn]=useState("");
   const[addAct,setAddAct]=useState(false);const[actN,setActN]=useState("");
   const[apiKey,setApiKey]=useState(()=>localStorage.getItem("ash-hq-key")||"");const[showKey,setShowKey]=useState(false);const[keyIn,setKeyIn]=useState("");
   const[aiRes,setAiRes]=useState("");const[aiLoad,setAiLoad]=useState(false);
   const[tmpl,setTmpl]=useState(false);
+  // Protein
+  const[mealIn,setMealIn]=useState("");const[mealLoad,setMealLoad]=useState(false);const[mealDraft,setMealDraft]=useState(null);const[mealErr,setMealErr]=useState("");
 
-  const SEED={tasks:[],projects:[],goals:[],acts:{},actNotes:{},notes:{},body:[],customActs:DEFAULT_ACTS.map(a=>a.name)};
+  const SEED={tasks:[],projects:[],goals:[],acts:{},actNotes:{},notes:{},body:[],meals:[],customActs:DEFAULT_ACTS.map(a=>a.name)};
 
   useEffect(()=>{DOC.get().then(doc=>{
     let d=doc.exists?doc.data():JSON.parse(JSON.stringify(SEED));
-    ["tasks","projects","goals","body"].forEach(k=>{if(!d[k])d[k]=[];});
+    ["tasks","projects","goals","body","meals"].forEach(k=>{if(!d[k])d[k]=[];});
     ["acts","actNotes","notes"].forEach(k=>{if(!d[k])d[k]={};});
     if(!d.customActs||!d.customActs.length)d.customActs=DEFAULT_ACTS.map(a=>a.name);
     setData(d);
   }).catch(()=>setData(JSON.parse(JSON.stringify(SEED))));},[]);
 
   useEffect(()=>{if(!data)return;if(sr.current)clearTimeout(sr.current);sr.current=setTimeout(()=>{DOC.set(JSON.parse(JSON.stringify(data))).catch(()=>{});},1500);},[data]);
-  useEffect(()=>()=>{window.speechSynthesis&&window.speechSynthesis.cancel();},[]);
 
-  // Handle recurring tasks on initial load only
+  // Handle recurring tasks on initial load — advance any done recurring task to its next FUTURE occurrence
   const recurDone=useRef(false);
   useEffect(()=>{
     if(!data||recurDone.current)return;
     recurDone.current=true;
     var toAdd=[];
     data.tasks.forEach(function(t){
-      if(t.done && t.recur && t.due <= TD){
+      if(t.done && t.recur){
+        // Find next future occurrence (skip past dates so we don't flood with overdue tasks)
         var nd=nextRecur(t.due,t.recur);
-        var exists=data.tasks.some(function(x){return x.text===t.text&&x.due===nd&&!x.done;});
+        while(nd<TD){nd=nextRecur(nd,t.recur);}
+        var exists=data.tasks.some(function(x){return x.text===t.text&&x.cat===t.cat&&x.due===nd;})||toAdd.some(function(x){return x.text===t.text&&x.cat===t.cat&&x.due===nd;});
         if(!exists)toAdd.push({id:uid(),text:t.text,cat:t.cat,due:nd,pri:t.pri,done:false,created:TD,recur:t.recur});
       }
     });
@@ -209,6 +200,57 @@ function HQ(){
   const getActNote=(k,d)=>actNotes[k+"-"+(d||actDate)]||"";
   const setActNote=(k,note,d)=>upd(p=>({actNotes:{...p.actNotes,[k+"-"+(d||actDate)]:note}}));
   const todayDone=customActs.filter(a=>isA(a,TD));
+
+  // ─── STREAKS ─── (consecutive days ending today or yesterday if today not done yet)
+  const getStreak=name=>{
+    let s=0,d=TD;
+    if(!acts[name+"-"+d])d=dateShift(d,-1);
+    while(acts[name+"-"+d]&&s<365){s++;d=dateShift(d,-1);}
+    return s;
+  };
+
+  // ─── PROTEIN ─── 
+  const latestWeight=body.length>0?body[0].weight:86.5;
+  const proteinTarget=Math.round(latestWeight*1.8);
+  const todayMeals=(data.meals||[]).filter(m=>m.date===TD);
+  const todayProtein=todayMeals.reduce((a,m)=>a+(m.total||0),0);
+  const proteinPct=Math.min(100,Math.round((todayProtein/proteinTarget)*100));
+  const parseMeal=(input)=>{
+    if(!apiKey){setMealErr("Add your API key first (🔑 top right).");return;}
+    if(!input.trim())return;
+    setMealLoad(true);setMealErr("");
+    callAI(apiKey,
+      "You are a nutrition parser. Given a free-text food entry, return ONLY a valid JSON object with this exact shape: {\"items\":[{\"name\":\"item description\",\"protein\":24}],\"total\":24}. Protein is grams, rounded to nearest whole number, using standard USDA values. Assume cooked weight unless user specifies raw. No markdown, no code fences, no explanation — only the JSON object.",
+      input,
+      txt=>{
+        setMealLoad(false);
+        try{
+          const clean=txt.replace(/```json|```/g,"").trim();
+          const obj=JSON.parse(clean);
+          if(!obj.items||!Array.isArray(obj.items))throw new Error("bad shape");
+          obj.total=obj.items.reduce((a,it)=>a+(it.protein||0),0);
+          setMealDraft({input,...obj});
+        }catch(e){setMealErr("Couldn't parse that. Try again with clearer wording.");}
+      });
+  };
+  const saveMeal=()=>{
+    if(!mealDraft)return;
+    upd(d=>({meals:[{id:uid(),date:TD,input:mealDraft.input,items:mealDraft.items,total:mealDraft.total,time:new Date().toISOString()},...(d.meals||[])]}));
+    setMealDraft(null);setMealIn("");setMealErr("");
+  };
+  const delMeal=id=>upd(d=>({meals:(d.meals||[]).filter(m=>m.id!==id)}));
+  const updMealItem=(idx,newProtein)=>{
+    if(!mealDraft)return;
+    const items=mealDraft.items.map((it,i)=>i===idx?{...it,protein:parseInt(newProtein)||0}:it);
+    const total=items.reduce((a,it)=>a+(it.protein||0),0);
+    setMealDraft({...mealDraft,items,total});
+  };
+  // Last 7 days protein history
+  const protein7d=Array.from({length:7},(_,i)=>{
+    const d=dateShift(TD,-6+i);
+    const ms=(data.meals||[]).filter(m=>m.date===d);
+    return{date:d,day:DS[new Date(d).getDay()],total:ms.reduce((a,m)=>a+(m.total||0),0)};
+  });
 
   // ─── TASKS ───
 
@@ -234,7 +276,18 @@ function HQ(){
   const allToday=[...overdueTs,...todayTs,...subAsTasks];
 
   const doAddT=()=>{if(!tf.text.trim())return;upd(d=>({tasks:[{id:uid(),text:tf.text.trim(),cat:tf.cat,due:tf.due,pri:tf.pri,done:false,created:TD,recur:tf.recur||""},...d.tasks]}));setTf({text:"",cat:"property",due:TD,pri:"normal",recur:""});setAddT(false);};
-  const tglDone=id=>{upd(d=>({tasks:d.tasks.map(t=>t.id===id?{...t,done:!t.done}:t)}));};
+  const tglDone=id=>{upd(d=>{
+    const t=d.tasks.find(x=>x.id===id);
+    const isCompleting=t&&!t.done;
+    let newTasks=d.tasks.map(x=>x.id===id?{...x,done:!x.done}:x);
+    if(isCompleting&&t.recur){
+      let nd=nextRecur(t.due,t.recur);
+      while(nd<TD)nd=nextRecur(nd,t.recur);
+      const exists=newTasks.some(x=>x.text===t.text&&x.cat===t.cat&&x.due===nd&&!x.done);
+      if(!exists)newTasks=newTasks.concat([{id:uid(),text:t.text,cat:t.cat,due:nd,pri:t.pri,done:false,created:TD,recur:t.recur}]);
+    }
+    return{tasks:newTasks};
+  });};
   const delT=id=>upd(d=>({tasks:d.tasks.filter(t=>t.id!==id)}));
   const saveEdit=id=>{if(!editF.text?.trim())return;upd(d=>({tasks:d.tasks.map(t=>t.id===id?{...t,...editF}:t)}));setEditId(null);};
   const gc=k=>CATS.find(c=>c.key===k)||CATS[0];
@@ -277,16 +330,7 @@ function HQ(){
   const wkPoss=customActs.length*wkD.filter(d=>!d.future).length;
   const wkRate=wkPoss>0?Math.round((wkDone/wkPoss)*100):0;
 
-  // ─── VOICE ───
-  const doSpk=()=>{if(spk){window.speechSynthesis.cancel();setSpk(false);}else if(brief){setSpk(true);speakText(brief);const iv=setInterval(()=>{if(!window.speechSynthesis.speaking){setSpk(false);clearInterval(iv);}},500);}};
-
   // ─── AI ───
-  const genBrief=()=>{
-    if(!apiKey){setBrief("Add your API key — tap the key icon top right.");return;}
-    setBLoad(true);
-    const ctx=`Date: ${DAYS[now.getDay()]} ${DN} ${MO[MI]} ${YR}\nTasks today: ${todayTs.map(t=>t.text).join(", ")||"None"}\nOverdue: ${overdueTs.map(t=>t.text).join(", ")||"None"}\nProjects: ${activeP.map(p=>{const d=p.subtasks.filter(s=>s.done).length;return p.title+" ("+d+"/"+p.subtasks.length+")"}).join("; ")||"None"}\nGoals: ${goals.filter(g=>g.status!=="Done").map(g=>g.text).join(", ")||"None"}\nActivity: ${todayDone.join(", ")||"Nothing yet"} (${wkRate}% this week)\n${body.length>0?"Weight: "+body[0].weight+"kg":""}`;
-    callAI(apiKey,"You are Ash's assistant. 8 properties Leeds/Bradford, trains boxing/weights/cycling, cutting fat.\n\nBriefing with headings:\nWEATHER - Leeds, one line.\nPRIORITIES - Tasks and overdue. Be firm.\nPROJECTS - Progress.\nFITNESS - Activity and weight.\nMOTIVATION - One sentence.\n\nNo emoji. No symbols. No markdown. Plain text. Under 180 words.","Briefing:\n\n"+ctx,txt=>{setBrief(txt);setBLoad(false);});
-  };
 
   const genBodyAI=()=>{
     if(!apiKey||body.length<2){setAiRes(body.length<2?"Need 2+ weigh-ins.":"Add API key first.");return;}
@@ -306,19 +350,19 @@ function HQ(){
         <h1 style={{fontSize:28,fontFamily:"'Playfair Display',serif",fontWeight:500,margin:"4px 0 0",color:C.txt}}>{grW}, Ash</h1>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           {!apiKey&&<button onClick={()=>setShowKey(true)} style={{background:"none",border:"none",cursor:"pointer",fontSize:15,padding:0,color:C.amb}}>🔑</button>}
-          {overdueC>0&&<span style={pl(C.redBg,C.redTx)}>{overdueC} overdue</span>}
+          {overdueC>0&&<span style={{...pl(C.red,"#fff"),fontSize:11,padding:"4px 10px",boxShadow:"0 1px 3px "+C.red+"40"}}>{overdueC} overdue</span>}
           <span style={pl(todayDone.length===customActs.length?C.grnBg:C.ambBg,todayDone.length===customActs.length?C.grnTx:C.ambTx)}>{todayDone.length}/{customActs.length}</span>
         </div>
       </div>
     </div>
 
     {/* TABS */}
-    <div style={{display:"flex",gap:4,padding:"16px 16px 0",marginBottom:16}}>
+    <div style={{display:"flex",gap:3,padding:"16px 12px 0",marginBottom:16}}>
       {TABS.map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{
-        flex:1,padding:"10px 6px",borderRadius:12,border:tab===t.k?"1.5px solid "+C.bdr:"1.5px solid transparent",
-        cursor:"pointer",fontFamily:"inherit",fontSize:11,fontWeight:600,textAlign:"center",
+        flex:1,padding:"9px 4px",borderRadius:10,border:tab===t.k?"1.5px solid "+C.bdr:"1.5px solid transparent",
+        cursor:"pointer",fontFamily:"inherit",fontSize:10,fontWeight:600,textAlign:"center",lineHeight:1.3,
         background:tab===t.k?C.card:"transparent",color:tab===t.k?C.txt:C.t2,
-      }}>{t.i}<br/>{t.l}</button>)}
+      }}><div style={{fontSize:14,marginBottom:2}}>{t.i}</div>{t.l}</button>)}
     </div>
 
     {showKey&&<div style={{margin:"0 16px 12px",padding:14,background:C.ambBg,border:"1px solid "+C.amb+"40",borderRadius:14}}>
@@ -382,10 +426,13 @@ function HQ(){
         <div style={{padding:14}}>
           <div style={{fontSize:15,fontWeight:700,color:C.txt,marginBottom:12}}>Activity</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-            {customActs.map(name=>{const done=isA(name,TD);const st=actStyle(name);
-              return <button key={name} onClick={()=>tgl(name,TD)} style={{padding:"16px 10px",borderRadius:14,cursor:"pointer",fontFamily:"'DM Sans',system-ui",textAlign:"center",
+            {customActs.map(name=>{const done=isA(name,TD);const st=actStyle(name);const streak=getStreak(name);
+              return <button key={name} onClick={()=>tgl(name,TD)} style={{padding:"16px 10px",borderRadius:14,cursor:"pointer",fontFamily:"'DM Sans',system-ui",textAlign:"center",position:"relative",
                 border:done?"2px solid "+st.color:"1px solid "+C.bdr,background:done?st.bg:"transparent",color:done?st.tx:C.t3,fontSize:13,fontWeight:600,transition:"all 0.15s",
-              }}>{name}{done&&<span style={{display:"block",fontSize:16,marginTop:4,color:st.color}}>✓</span>}</button>;
+              }}>
+                {streak>=2&&<span style={{position:"absolute",top:6,right:8,fontSize:10,fontWeight:700,color:done?st.color:C.t2}}>🔥 {streak}</span>}
+                {name}{done&&<span style={{display:"block",fontSize:16,marginTop:4,color:st.color}}>✓</span>}
+              </button>;
             })}
           </div>
         </div>
@@ -421,22 +468,6 @@ function HQ(){
           </div>;
         })}</div>
       </div>}
-
-      {/* AI collapsed */}
-      <div style={card}>
-        <button onClick={()=>setShowBrief(!showBrief)} style={{width:"100%",padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",border:"none",cursor:"pointer",background:"transparent",fontFamily:"inherit"}}>
-          <div style={{textAlign:"left"}}><div style={{fontSize:15,fontWeight:700,color:C.txt}}>AI Morning Briefing</div><div style={{fontSize:12,color:C.t2,marginTop:1}}>{brief?"Tap to view":"Generate your briefing"}</div></div>
-          <span style={{color:C.t3}}>{showBrief?"▲":"▼"}</span>
-        </button>
-        {showBrief&&<div style={{borderTop:"1px solid "+C.bdr}}>
-          <div style={{padding:"10px 16px",display:"flex",gap:8}}>
-            {brief&&<button onClick={doSpk} style={{padding:"8px 14px",borderRadius:10,border:"none",cursor:"pointer",background:spk?C.redBg:C.grnBg,color:spk?C.redTx:C.grnTx,fontSize:12,fontWeight:600}}>{spk?"Stop":"Play"}</button>}
-            <button onClick={genBrief} disabled={bLoad} style={{padding:"8px 14px",borderRadius:10,border:"none",cursor:"pointer",background:bLoad?C.bdr:C.slate,color:bLoad?C.t3:"#fff",fontSize:12,fontWeight:600}}>{bLoad?"Generating...":brief?"Refresh":"Generate"}</button>
-          </div>
-          {brief&&<div style={{padding:"10px 16px 16px",fontSize:13,lineHeight:1.8,color:C.txt,whiteSpace:"pre-wrap"}}>{brief}</div>}
-          {!brief&&!bLoad&&<div style={{padding:"16px",textAlign:"center",color:C.t3,fontSize:13}}>{apiKey?"Tap Generate":"Add API key first"}</div>}
-        </div>}
-      </div>
     </>}
 
     {/* ══════ TASKS ══════ */}
@@ -624,12 +655,12 @@ function HQ(){
       <div style={card}>
         <div style={cHead}><div style={{fontSize:15,fontWeight:700,color:C.txt}}>Activities</div><span style={pl(customActs.filter(a=>isA(a)).length===customActs.length?C.grnBg:C.ambBg,customActs.filter(a=>isA(a)).length===customActs.length?C.grnTx:C.ambTx)}>{customActs.filter(a=>isA(a)).length}/{customActs.length}</span></div>
         <div style={{padding:"14px 16px"}}>
-          {customActs.map(name=>{const done=isA(name);const st=actStyle(name);const note=getActNote(name);const isEditing=editAct===name+"-"+actDate;const isRenaming=editAct==="rename-"+name;
+          {customActs.map(name=>{const done=isA(name);const st=actStyle(name);const note=getActNote(name);const streak=getStreak(name);const isEditing=editAct===name+"-"+actDate;const isRenaming=editAct==="rename-"+name;
             return <div key={name} style={{marginBottom:10}}>
               <div style={{display:"flex",gap:6,alignItems:"center"}}>
                 <button onClick={()=>tgl(name)} style={{flex:1,padding:"12px 10px",borderRadius:12,cursor:"pointer",fontFamily:"'DM Sans',system-ui",textAlign:"left",fontSize:13,fontWeight:600,
                   border:done?"2px solid "+st.color:"1px solid "+C.bdr,background:done?st.bg:"transparent",color:done?st.tx:C.t3,display:"flex",justifyContent:"space-between",alignItems:"center",
-                }}><span>{name}</span>{done&&<span style={{color:st.color}}>✓</span>}</button>
+                }}><span style={{display:"flex",alignItems:"center",gap:8}}>{name}{streak>=2&&actDate===TD&&<span style={{fontSize:10,fontWeight:700,color:done?st.color:C.t2,background:done?"rgba(255,255,255,0.4)":"transparent",padding:"2px 6px",borderRadius:8}}>🔥 {streak}</span>}</span>{done&&<span style={{color:st.color}}>✓</span>}</button>
                 <button onClick={()=>{if(isRenaming){setEditAct(null);}else{setEditAct("rename-"+name);setActNoteIn(name);}}} style={{width:28,height:28,borderRadius:8,border:"1px solid "+C.bdr,cursor:"pointer",background:C.card,fontSize:10,color:C.t2,display:"flex",alignItems:"center",justifyContent:"center"}}>✏</button>
                 {done&&<button onClick={()=>{if(isEditing){setEditAct(null);}else{setEditAct(name+"-"+actDate);setActNoteIn(note);}}} style={{width:28,height:28,borderRadius:8,border:"1px solid "+C.bdr,cursor:"pointer",background:note?st.bg:C.card,fontSize:10,color:note?st.tx:C.t3,display:"flex",alignItems:"center",justifyContent:"center"}}>{note?"📝":"+"}</button>}
               </div>
@@ -693,6 +724,10 @@ function HQ(){
       {/* Weight */}
       <div style={card}>
         <div style={cHead}><div><div style={{fontSize:15,fontWeight:700,color:C.txt}}>Weight</div><div style={{fontSize:12,color:C.t2,marginTop:1}}>{body.length>0?body[0].weight+"kg — "+fmt(body[0].date):"Start tracking"}</div></div></div>
+        <div style={{padding:"10px 16px",background:C.bluBg,borderBottom:"1px solid "+C.bdr}}>
+          <div style={{fontSize:11,fontWeight:700,color:C.bluTx,marginBottom:2}}>When to weigh in</div>
+          <div style={{fontSize:11,color:C.bluTx,lineHeight:1.5}}>Saturday morning, first thing after toilet, before any food or water. Same conditions every week. Weight swings 1–2kg day-to-day — only the trend matters.</div>
+        </div>
         {body.length>=2&&<div style={{padding:"8px 16px"}}><WChart data={body}/></div>}
         {addB?<div style={{padding:"8px 16px 14px",display:"flex",gap:8,borderTop:body.length>=2?"1px solid "+C.bdr:"none"}}>
           <input value={bw} onChange={e=>setBw(e.target.value)} placeholder="kg" type="number" step="0.1" style={{...inp,width:90,marginBottom:0}} autoFocus/>
@@ -703,6 +738,96 @@ function HQ(){
 
       <button onClick={genBodyAI} disabled={aiLoad} style={{width:"100%",padding:14,borderRadius:12,border:"none",cursor:"pointer",background:aiLoad?C.bdr:C.slate,color:aiLoad?C.t3:"#fff",fontSize:14,fontWeight:600,fontFamily:"inherit",marginBottom:10}}>{aiLoad?"Analysing...":"AI body & fitness review"}</button>
       {aiRes&&<div style={{...card,padding:14}}><div style={{fontSize:13,lineHeight:1.8,color:C.txt,whiteSpace:"pre-wrap"}}>{aiRes}</div></div>}
+    </>}
+
+    {/* ══════ PROTEIN ══════ */}
+    {tab==="protein"&&<>
+      {/* Target ring */}
+      <div style={card}>
+        <div style={{padding:"18px 16px",textAlign:"center"}}>
+          <div style={{position:"relative",width:180,height:180,margin:"0 auto 12px"}}>
+            <svg viewBox="0 0 180 180" style={{width:"100%",height:"100%",transform:"rotate(-90deg)"}}>
+              <circle cx="90" cy="90" r="78" fill="none" stroke={C.bdr} strokeWidth="12"/>
+              <circle cx="90" cy="90" r="78" fill="none" stroke={todayProtein>=proteinTarget?C.grn:C.coral} strokeWidth="12" strokeLinecap="round" strokeDasharray={490} strokeDashoffset={490-(Math.min(todayProtein,proteinTarget)/proteinTarget)*490} style={{transition:"stroke-dashoffset 0.5s"}}/>
+            </svg>
+            <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+              <div style={{fontSize:36,fontWeight:700,color:C.txt,fontFamily:"'Playfair Display',serif"}}>{todayProtein}<span style={{fontSize:16,color:C.t2,fontFamily:"'DM Sans',sans-serif"}}>g</span></div>
+              <div style={{fontSize:11,color:C.t2,marginTop:2}}>of {proteinTarget}g target</div>
+              <div style={{fontSize:10,color:proteinPct>=100?C.grn:C.coral,fontWeight:700,marginTop:4}}>{proteinPct}%</div>
+            </div>
+          </div>
+          <div style={{fontSize:11,color:C.t2,lineHeight:1.5,maxWidth:280,margin:"0 auto"}}>Target: {latestWeight}kg × 1.8g = {proteinTarget}g. Recalculates with each new weigh-in.</div>
+        </div>
+      </div>
+
+      {/* Log a meal */}
+      <div style={card}>
+        <div style={cHead}><div style={{fontSize:15,fontWeight:700,color:C.txt}}>Log a meal</div></div>
+        <div style={{padding:14}}>
+          {!mealDraft&&<>
+            <textarea value={mealIn} onChange={e=>setMealIn(e.target.value)} placeholder="e.g. 4 large eggs, 200g sirloin steak, 250g greek yoghurt" style={{...inp,minHeight:60,resize:"vertical",fontFamily:"inherit"}}/>
+            <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <button onClick={()=>parseMeal(mealIn)} disabled={mealLoad||!mealIn.trim()} style={{flex:1,padding:12,borderRadius:10,border:"none",cursor:mealLoad||!mealIn.trim()?"default":"pointer",background:mealLoad||!mealIn.trim()?C.bdr:C.coral,color:mealLoad||!mealIn.trim()?C.t3:"#fff",fontSize:14,fontWeight:600,fontFamily:"inherit"}}>{mealLoad?"Working it out...":"Calculate protein"}</button>
+            </div>
+            {mealErr&&<div style={{fontSize:12,color:C.redTx,marginTop:8,padding:"8px 10px",background:C.redBg,borderRadius:8}}>{mealErr}</div>}
+          </>}
+          {mealDraft&&<div>
+            <div style={{fontSize:12,color:C.t2,marginBottom:8}}>Review — tap any number to adjust</div>
+            {mealDraft.items.map((it,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:i<mealDraft.items.length-1?"1px solid "+C.bdr:"none"}}>
+              <div style={{fontSize:13,color:C.txt,flex:1,paddingRight:8}}>{it.name}</div>
+              <div style={{display:"flex",alignItems:"center",gap:4}}>
+                <input type="number" value={it.protein} onChange={e=>updMealItem(i,e.target.value)} style={{width:50,padding:"4px 8px",borderRadius:8,border:"1px solid "+C.bdr,fontSize:13,fontWeight:700,color:C.coralTx,background:C.coralBg,textAlign:"right",outline:"none"}}/>
+                <span style={{fontSize:12,color:C.t2}}>g</span>
+              </div>
+            </div>)}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0 0",borderTop:"2px solid "+C.bdr,marginTop:8}}>
+              <div style={{fontSize:14,fontWeight:700,color:C.txt}}>Total</div>
+              <div style={{fontSize:18,fontWeight:700,color:C.coralTx}}>{mealDraft.total}g</div>
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:14}}>
+              <button onClick={saveMeal} style={{flex:1,padding:12,borderRadius:10,border:"none",cursor:"pointer",background:C.grn,color:"#fff",fontSize:14,fontWeight:600,fontFamily:"inherit"}}>Save meal</button>
+              <button onClick={()=>{setMealDraft(null);setMealIn("");}} style={{padding:"12px 18px",borderRadius:10,border:"1px solid "+C.bdr,cursor:"pointer",background:"transparent",color:C.t2,fontSize:13,fontFamily:"inherit"}}>Cancel</button>
+            </div>
+          </div>}
+        </div>
+      </div>
+
+      {/* Today's meals */}
+      {todayMeals.length>0&&<div style={card}>
+        <div style={cHead}><div style={{fontSize:15,fontWeight:700,color:C.txt}}>Today's meals</div><span style={pl(C.coralBg,C.coralTx)}>{todayMeals.length} logged</span></div>
+        {todayMeals.map((m,i)=><div key={m.id} style={{padding:"12px 16px",borderBottom:i<todayMeals.length-1?"1px solid "+C.bdr:"none"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:13,color:C.txt,fontWeight:500,marginBottom:4}}>{m.input}</div>
+              <div style={{fontSize:11,color:C.t2}}>{(m.items||[]).map(it=>it.name+" ("+it.protein+"g)").join(" · ")}</div>
+            </div>
+            <div style={{textAlign:"right",flexShrink:0}}>
+              <div style={{fontSize:16,fontWeight:700,color:C.coralTx}}>{m.total}g</div>
+              <button onClick={()=>delMeal(m.id)} style={{fontSize:10,color:C.t3,background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",marginTop:2,padding:0}}>Delete</button>
+            </div>
+          </div>
+        </div>)}
+      </div>}
+
+      {/* 7-day history */}
+      <div style={card}>
+        <div style={cHead}><div style={{fontSize:15,fontWeight:700,color:C.txt}}>Last 7 days</div><span style={pl(C.grnBg,C.grnTx)}>avg {Math.round(protein7d.reduce((a,d)=>a+d.total,0)/7)}g</span></div>
+        <div style={{padding:"14px 16px"}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,alignItems:"end",height:90,marginBottom:8}}>
+            {protein7d.map(d=>{const pct=Math.min(100,(d.total/proteinTarget)*100);const hit=d.total>=proteinTarget;
+              return <div key={d.date} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3,height:"100%",justifyContent:"flex-end"}}>
+                <div style={{fontSize:9,color:d.total>0?C.txt:C.t3,fontWeight:600}}>{d.total||"—"}</div>
+                <div style={{width:"100%",background:hit?C.grn:d.total>0?C.coral:C.bdr,height:d.total>0?Math.max(4,pct*0.65)+"%":4,borderRadius:"6px 6px 0 0",transition:"height 0.3s",opacity:d.date===TD?1:0.7}}/>
+              </div>;
+            })}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
+            {protein7d.map(d=><div key={d.date} style={{fontSize:10,color:d.date===TD?C.txt:C.t3,fontWeight:d.date===TD?700:500,textAlign:"center"}}>{d.day}</div>)}
+          </div>
+        </div>
+      </div>
+
+      <div style={{padding:"4px 4px 10px",fontSize:11,color:C.t3,lineHeight:1.5}}>Protein estimates come from the AI parsing your entries. Tap the numbers to correct anything off. Standard foods (eggs, steak, chicken, yoghurt, whey) are very accurate. Restaurant meals and mixed dishes are rougher.</div>
     </>}
 
     </div>
