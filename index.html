@@ -179,12 +179,16 @@ function HQ(){
   const[tmpl,setTmpl]=useState(false);
   const[mealIn,setMealIn]=useState("");const[mealLoad,setMealLoad]=useState(false);const[mealDraft,setMealDraft]=useState(null);const[mealErr,setMealErr]=useState("");
   const[reflectIn,setReflectIn]=useState("");
-  const[wkAi,setWkAi]=useState("");const[wkAiLoad,setWkAiLoad]=useState(false);
+  const[wkAi,setWkAi]=useState(()=>"");const[wkAiLoad,setWkAiLoad]=useState(false);
   const[stepsIn,setStepsIn]=useState("");
+  const[showPlanTmr,setShowPlanTmr]=useState(false);
+  const[planDraft,setPlanDraft]=useState({acts:[],note:""});
+  const[showFoodMgr,setShowFoodMgr]=useState(false);
+  const[newFoodN,setNewFoodN]=useState("");const[newFoodP,setNewFoodP]=useState("");
   const fileRef=useRef(null);
   const[showSettings,setShowSettings]=useState(false);
 
-  const SEED={tasks:[],projects:[],goals:[],acts:{},actNotes:{},notes:{},body:[],meals:[],steps:{},reflections:{},foods:DEFAULT_FOODS,customActs:DEFAULT_ACTS.map(a=>a.name)};
+  const SEED={tasks:[],projects:[],goals:[],acts:{},actNotes:{},notes:{},body:[],meals:[],steps:{},reflections:{},foods:DEFAULT_FOODS,customActs:DEFAULT_ACTS.map(a=>a.name),plans:{},weeklyReviews:{},restDays:{}};
 
   useEffect(()=>{
     DOC.get().then(doc=>{
@@ -192,7 +196,7 @@ function HQ(){
       if(!d){try{const b=localStorage.getItem(BK);if(b)d=JSON.parse(b);}catch{}}
       if(!d)d=JSON.parse(JSON.stringify(SEED));
       ["tasks","projects","goals","body","meals"].forEach(k=>{if(!d[k])d[k]=[];});
-      ["acts","actNotes","notes","steps","reflections"].forEach(k=>{if(!d[k])d[k]={};});
+      ["acts","actNotes","notes","steps","reflections","plans","weeklyReviews","restDays"].forEach(k=>{if(!d[k])d[k]={};});
       if(!d.foods||!d.foods.length)d.foods=DEFAULT_FOODS;
       if(!d.customActs||!d.customActs.length)d.customActs=DEFAULT_ACTS.map(a=>a.name);
       setData(d);
@@ -223,12 +227,14 @@ function HQ(){
       }
     });
     if(toAdd.length>0)setData(function(p){return Object.assign({},p,{tasks:p.tasks.concat(toAdd)});});
+    // Restore saved weekly review for current week
+    if(data.weeklyReviews&&data.weeklyReviews[thisWeekStart]&&data.weeklyReviews[thisWeekStart].text)setWkAi(data.weeklyReviews[thisWeekStart].text);
   },[data]);
 
   if(!data)return <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh"}}><div style={{color:C.t2}}>Loading...</div></div>;
 
   const upd=fn=>setData(p=>({...p,...fn(p)}));
-  const{tasks,projects,goals,acts,actNotes,notes,body,customActs,steps,reflections,foods,meals}=data;
+  const{tasks,projects,goals,acts,actNotes,notes,body,customActs,steps,reflections,foods,meals,plans,weeklyReviews,restDays}=data;
 
   // ─── ACTIVITY ───
   const actStyle=name=>{const d=DEFAULT_ACTS.find(a=>a.name===name);return d||{name,color:C.grn,bg:C.grnBg,tx:C.grnTx};};
@@ -273,9 +279,14 @@ function HQ(){
   };
   const saveMeal=()=>{
     if(!mealDraft)return;
-    upd(d=>({meals:[{id:uid(),date:foodDate,input:mealDraft.input,items:mealDraft.items,total:mealDraft.total,time:new Date().toISOString()},...(d.meals||[])]}));
+    if(mealDraft._editingId){
+      upd(d=>({meals:(d.meals||[]).map(m=>m.id===mealDraft._editingId?{...m,input:mealDraft.input,items:mealDraft.items,total:mealDraft.total}:m)}));
+    }else{
+      upd(d=>({meals:[{id:uid(),date:foodDate,input:mealDraft.input,items:mealDraft.items,total:mealDraft.total,time:new Date().toISOString()},...(d.meals||[])]}));
+    }
     setMealDraft(null);setMealIn("");setMealErr("");
   };
+  const editMeal=m=>{setMealDraft({input:m.input,items:m.items||[],total:m.total,_editingId:m.id});setMealErr("");window.scrollTo({top:0,behavior:"smooth"});};
   const quickAdd=(food)=>{
     upd(d=>({meals:[{id:uid(),date:foodDate,input:food.name,items:[{name:food.name,protein:food.protein}],total:food.protein,time:new Date().toISOString()},...(d.meals||[])]}));
   };
@@ -306,6 +317,27 @@ function HQ(){
   const delT=id=>upd(d=>({tasks:d.tasks.filter(t=>t.id!==id)}));
   const saveEdit=id=>{if(!editF.text?.trim())return;upd(d=>({tasks:d.tasks.map(t=>t.id===id?{...t,...editF}:t)}));setEditId(null);};
   const gc=k=>CATS.find(c=>c.key===k)||CATS[0];
+
+  // ─── PIN / MUST-DO ───
+  const togglePin=id=>upd(d=>({tasks:d.tasks.map(t=>t.id===id?{...t,mustDoDate:t.mustDoDate===TD?null:TD}:t)}));
+  const togglePinDate=(id,date)=>upd(d=>({tasks:d.tasks.map(t=>t.id===id?{...t,mustDoDate:t.mustDoDate===date?null:date}:t)}));
+  const mustDoToday=tasks.filter(t=>!t.done&&t.mustDoDate===TD);
+
+  // ─── REST DAY ───
+  const isRest=d=>!!restDays[d||actDate];
+  const toggleRest=d=>upd(p=>{const n={...p.restDays};const k=d||actDate;n[k]?delete n[k]:n[k]=true;return{restDays:n};});
+
+  // ─── PLANS ───
+  const TMR=dateShift(TD,1);
+  const planToday=plans[TD];
+  const planTmr=plans[TMR];
+  const saveTmrPlan=()=>{upd(d=>({plans:{...d.plans,[TMR]:{acts:planDraft.acts,note:planDraft.note||""}}}));setShowPlanTmr(false);};
+  const delTmrPlan=()=>upd(d=>{const n={...d.plans};delete n[TMR];return{plans:n};});
+
+  // ─── FOODS MGR ───
+  const addFood=()=>{if(!newFoodN.trim()||!newFoodP)return;upd(d=>({foods:[...(d.foods||[]),{name:newFoodN.trim(),protein:parseInt(newFoodP)||0}]}));setNewFoodN("");setNewFoodP("");};
+  const delFood=i=>upd(d=>({foods:d.foods.filter((_,x)=>x!==i)}));
+  const updFood=(i,patch)=>upd(d=>({foods:d.foods.map((f,x)=>x===i?{...f,...patch}:f)}));
   const filtT=tasks.filter(t=>{if(vm==="today")return(t.due===TD||t.due<TD)&&!t.done;if(vm==="upcoming")return t.due>TD&&!t.done;if(vm==="overdue")return t.due<TD&&!t.done;if(vm==="done")return t.done;return true;}).filter(t=>flt==="all"||t.cat===flt);
 
   // ─── PROJECTS ───
@@ -356,8 +388,9 @@ function HQ(){
     notes:customActs.reduce((o,a)=>{const n=actNotes[a+"-"+d];if(n)o[a]=n;return o;},{}),
     genNote:notes[d]||"",today:d===TD,future:d>TD,isThisWeek:d>=thisWeekStart};});
   const wkD=twData.filter(d=>d.isThisWeek);
-  const wkDone=wkD.reduce((a,d)=>a+d.done.length,0);
-  const wkPoss=customActs.length*wkD.filter(d=>!d.future).length;
+  const wkDaysActive=wkD.filter(d=>!d.future&&!restDays[d.date]);
+  const wkDone=wkDaysActive.reduce((a,d)=>a+d.done.length,0);
+  const wkPoss=customActs.length*wkDaysActive.length;
   const wkRate=wkPoss>0?Math.round((wkDone/wkPoss)*100):0;
 
   // ─── DAILY SCORE (simple X/Y) ───
@@ -374,7 +407,7 @@ function HQ(){
     const reflects=Object.entries(reflections).filter(([d])=>d>=thisWeekStart).map(([d,r])=>DS[new Date(d).getDay()]+": "+r).join(" | ");
     callAI(apiKey,"Coach for Ash: boxing, weights, cycling, cutting fat, property investor. Direct, no fluff, no emoji.",
       "Week: "+thisWeekStart+" to "+TD+"\nActivity: "+wkRate+"% ("+wkDone+"/"+wkPoss+")\nPer day: "+wkD.filter(d=>!d.future).map(d=>d.day+": "+(d.done.join(",")||"rest")).join(" | ")+"\nWeight: "+(body[0]?body[0].weight+"kg, slope "+weightTrend.slope.toFixed(3)+"kg/day":"n/a")+"\nAvg protein: "+avgProtein+"g (target "+proteinTarget+"g)\nSteps total: "+wkSteps+"\nReflections: "+(reflects||"none")+"\n\nGive: 1) what went well 2) what slipped 3) one change for next week. Under 180 words.",
-      txt=>{setWkAi(txt);setWkAiLoad(false);});
+      txt=>{setWkAi(txt);setWkAiLoad(false);upd(d=>({weeklyReviews:{...d.weeklyReviews,[thisWeekStart]:{text:txt,generated:TD}}}));});
   };
 
   // ─── EXPORT / IMPORT ───
@@ -445,11 +478,60 @@ function HQ(){
         <button onClick={()=>fileRef.current&&fileRef.current.click()} style={btnP(C.amb)}>Import JSON</button>
       </div>
       <input ref={fileRef} type="file" accept=".json" onChange={importJSON} style={{display:"none"}}/>
-      <div style={{fontSize:10,color:C.t3,marginTop:4}}>Data auto-backs up to this device. Import replaces all data.</div>
+      <div style={{fontSize:10,color:C.t3,marginTop:4,marginBottom:14}}>Data auto-backs up to this device. Import replaces all data.</div>
+
+      <div style={{borderTop:"1px solid "+C.bdr,paddingTop:12}}>
+        <button onClick={()=>setShowFoodMgr(s=>!s)} style={{width:"100%",textAlign:"left",padding:"8px 0",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:700,color:C.txt,display:"flex",justifyContent:"space-between"}}>
+          <span>Manage quick-add foods ({foods.length})</span>
+          <span style={{color:C.t2}}>{showFoodMgr?"−":"+"}</span>
+        </button>
+        {showFoodMgr&&<div style={{marginTop:10}}>
+          {foods.map((f,i)=><div key={i} style={{display:"flex",gap:6,alignItems:"center",padding:"6px 0",borderBottom:i<foods.length-1?"1px solid "+C.bdr:"none"}}>
+            <input value={f.name} onChange={e=>updFood(i,{name:e.target.value})} style={{...inp,flex:1,marginBottom:0,fontSize:12,padding:"6px 10px"}}/>
+            <input type="number" value={f.protein} onChange={e=>updFood(i,{protein:parseInt(e.target.value)||0})} style={{...inp,width:60,marginBottom:0,fontSize:12,padding:"6px 10px",textAlign:"right"}}/>
+            <span style={{fontSize:11,color:C.t2}}>g</span>
+            <button onClick={()=>delFood(i)} style={{width:24,height:24,borderRadius:6,border:"none",background:C.redBg,cursor:"pointer",color:C.redTx,display:"flex",alignItems:"center",justifyContent:"center"}}>{Ico.trash}</button>
+          </div>)}
+          <div style={{display:"flex",gap:6,marginTop:10,paddingTop:8,borderTop:"1px solid "+C.bdr}}>
+            <input value={newFoodN} onChange={e=>setNewFoodN(e.target.value)} placeholder="New food (e.g. Costa chicken wrap)" style={{...inp,flex:1,marginBottom:0,fontSize:12}}/>
+            <input type="number" value={newFoodP} onChange={e=>setNewFoodP(e.target.value)} placeholder="g" style={{...inp,width:60,marginBottom:0,fontSize:12,textAlign:"right"}}/>
+            <button onClick={addFood} style={btnP(C.coral)}>Add</button>
+          </div>
+        </div>}
+      </div>
     </div>}
 
     {/* ══════ TODAY ══════ */}
     {tab==="today"&&<div className="fade-in">
+
+      {/* ═══ HERO BLOCK — MUST DO + PLANNED ═══ */}
+      {(mustDoToday.length>0||(planToday&&(planToday.acts||[]).length>0))&&<div style={{...card,borderTop:"4px solid "+C.grn,background:"linear-gradient(180deg,#fcfbf8 0%,"+C.card+" 100%)",marginBottom:14}}>
+        <div style={{padding:"16px 16px 8px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:12}}>
+            <div>
+              <div style={{fontSize:10,fontWeight:700,letterSpacing:1.4,color:C.grn,textTransform:"uppercase"}}>Today's focus</div>
+              <div style={{fontSize:22,fontFamily:"'Playfair Display',serif",fontWeight:600,color:C.txt,marginTop:2,lineHeight:1.1}}>{dailyScore}<span style={{color:C.t3,fontSize:18}}>/{dailyTotal}</span> <span style={{fontSize:14,color:C.t2,fontFamily:"'DM Sans',sans-serif",fontWeight:500}}>done so far</span></div>
+            </div>
+          </div>
+          {mustDoToday.length>0&&<div style={{marginBottom:10}}>
+            <div style={{fontSize:11,fontWeight:700,color:C.red,marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Must do ({mustDoToday.length})</div>
+            {mustDoToday.map((t,i)=>{const c=gc(t.cat);return <div key={t.id} style={{padding:"10px 12px",display:"flex",gap:10,alignItems:"center",background:C.card,border:"1.5px solid "+C.red+"30",borderRadius:10,marginBottom:i<mustDoToday.length-1?6:0}}>
+              <button onClick={()=>tglDone(t.id)} style={{width:22,height:22,borderRadius:7,flexShrink:0,border:"2px solid "+C.red,background:"transparent",cursor:"pointer"}}/>
+              <div style={{flex:1,minWidth:0,fontSize:14,fontWeight:600,color:C.txt}}>{t.text}</div>
+              <button onClick={()=>togglePin(t.id)} style={{background:"none",border:"none",cursor:"pointer",fontSize:16,color:C.amb,padding:4}} title="Unpin">★</button>
+            </div>;})}
+          </div>}
+          {planToday&&(planToday.acts||[]).length>0&&<div style={{padding:"10px 12px",background:C.bluBg,borderRadius:10,marginBottom:8}}>
+            <div style={{fontSize:10,fontWeight:700,letterSpacing:0.6,color:C.bluTx,marginBottom:4,textTransform:"uppercase"}}>Planned last night</div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+              {planToday.acts.map(a=>{const st=actStyle(a);const done=isA(a,TD);return <span key={a} style={{fontSize:12,padding:"3px 10px",borderRadius:99,background:done?st.bg:C.card,color:done?st.tx:C.bluTx,border:"1px solid "+(done?st.color:C.bluTx+"30"),fontWeight:600,textDecoration:done?"line-through":"none"}}>{done?"✓ ":""}{a}</span>;})}
+            </div>
+            {planToday.note&&<div style={{fontSize:11,color:C.bluTx,marginTop:6,lineHeight:1.4}}>"{planToday.note}"</div>}
+          </div>}
+        </div>
+      </div>}
+
+      {/* ═══ END HERO ═══ */}
       <div style={card}>
         <div style={cHead}>
           <div><div style={{fontSize:15,fontWeight:700,color:C.txt}}>Today's tasks</div><div style={{fontSize:12,color:C.t2,marginTop:1}}>{allToday.length} to do</div></div>
@@ -582,6 +664,7 @@ function HQ(){
               </div>
             </div>
             <div style={{display:"flex",gap:4,flexShrink:0}}>
+              <button onClick={()=>togglePin(t.id)} style={{width:26,height:26,borderRadius:8,border:"none",background:t.mustDoDate===TD?C.amb:C.bdr,cursor:"pointer",color:t.mustDoDate===TD?"#fff":C.t2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}} title="Must-do today">★</button>
               <a href={calUrl(t.text,t.due)} target="_blank" rel="noopener" style={{width:26,height:26,borderRadius:8,background:C.grnBg,color:C.grn,display:"flex",alignItems:"center",justifyContent:"center"}}>{Ico.cal}</a>
               <button onClick={()=>{setEditId(t.id);setEditF({text:t.text,cat:t.cat,due:t.due,pri:t.pri,recur:t.recur||""});}} style={{width:26,height:26,borderRadius:8,border:"none",background:C.bdr,cursor:"pointer",color:C.t2,display:"flex",alignItems:"center",justifyContent:"center"}}>{Ico.edit}</button>
               <button onClick={()=>delT(t.id)} style={{width:26,height:26,borderRadius:8,border:"none",background:C.redBg,cursor:"pointer",color:C.redTx,display:"flex",alignItems:"center",justifyContent:"center"}}>{Ico.trash}</button>
@@ -713,8 +796,15 @@ function HQ(){
       </div>
 
       <div style={card}>
-        <div style={cHead}><div style={{fontSize:15,fontWeight:700,color:C.txt}}>Activities</div><span style={pl(customActs.filter(a=>isA(a)).length===customActs.length?C.grnBg:C.ambBg,customActs.filter(a=>isA(a)).length===customActs.length?C.grnTx:C.ambTx)}>{customActs.filter(a=>isA(a)).length}/{customActs.length}</span></div>
-        <div style={{padding:"14px 16px"}}>
+        <div style={cHead}>
+          <div style={{fontSize:15,fontWeight:700,color:C.txt}}>Activities</div>
+          <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            <button onClick={()=>toggleRest()} style={{padding:"4px 10px",borderRadius:99,border:isRest()?"none":"1px solid "+C.bdr,cursor:"pointer",background:isRest()?C.purp:"transparent",color:isRest()?"#fff":C.t2,fontSize:10,fontWeight:600,fontFamily:"inherit"}} title="Planned rest day doesn't count against you">{isRest()?"✓ Rest day":"Rest day"}</button>
+            {!isRest()&&<span style={pl(customActs.filter(a=>isA(a)).length===customActs.length?C.grnBg:C.ambBg,customActs.filter(a=>isA(a)).length===customActs.length?C.grnTx:C.ambTx)}>{customActs.filter(a=>isA(a)).length}/{customActs.length}</span>}
+          </div>
+        </div>
+        {isRest()&&<div style={{padding:"10px 16px",background:C.purpBg,fontSize:12,color:C.purpTx,borderBottom:"1px solid "+C.bdr,textAlign:"center"}}>Rest day — won't count as missed</div>}
+        <div style={{padding:"14px 16px",opacity:isRest()?0.5:1}}>
           {customActs.map(name=>{const done=isA(name);const st=actStyle(name);const note=getActNote(name);const streak=getStreak(name);const isEditing=editAct===name+"-"+actDate;const isRenaming=editAct==="rename-"+name;
             return <div key={name} style={{marginBottom:10}}>
               <div style={{display:"flex",gap:6,alignItems:"center"}}>
@@ -760,16 +850,16 @@ function HQ(){
       {/* 2-WEEK VIEW WITH MISSED RED DOTS */}
       <div style={card}>
         <div style={cHead}><div style={{fontSize:15,fontWeight:700,color:C.txt}}>Last 2 weeks</div><span style={pl(C.grnBg,C.grnTx)}>{wkRate}% this wk</span></div>
-        {twData.map((d,i)=>{const hasNotes=Object.keys(d.notes).length>0;const st=steps[d.date]||0;const someMissed=!d.future&&!d.today&&d.missed.length>0&&d.done.length>0;
-          return <div key={d.date} style={{borderBottom:i<13?"1px solid "+C.bdr:"none",opacity:d.future?0.3:1}}>
+        {twData.map((d,i)=>{const hasNotes=Object.keys(d.notes).length>0;const st=steps[d.date]||0;const rest=!!restDays[d.date];const someMissed=!d.future&&!d.today&&!rest&&d.missed.length>0&&d.done.length>0;
+          return <div key={d.date} style={{borderBottom:i<13?"1px solid "+C.bdr:"none",opacity:d.future?0.3:1,background:rest?C.purpBg+"60":"transparent"}}>
             <div style={{padding:"10px 16px",display:"flex",alignItems:"center",gap:10,cursor:"pointer"}} onClick={()=>setActDate(d.date)}>
               <div style={{width:36,textAlign:"center",position:"relative"}}>
                 <div style={{fontSize:10,fontWeight:d.today?700:500,color:d.today?C.txt:d.isThisWeek?C.t2:C.t3}}>{d.day}</div>
                 <div style={{fontSize:14,fontWeight:700,color:d.today?C.txt:d.isThisWeek?C.t2:C.t3}}>{d.num}</div>
-                {!d.future&&!d.today&&d.done.length===0&&<span style={{position:"absolute",top:0,right:0,width:6,height:6,borderRadius:"50%",background:C.red}}/>}
+                {!d.future&&!d.today&&!rest&&d.done.length===0&&<span style={{position:"absolute",top:0,right:0,width:6,height:6,borderRadius:"50%",background:C.red}}/>}
               </div>
               <div style={{flex:1,display:"flex",gap:4,flexWrap:"wrap",alignItems:"center"}}>
-                {d.done.length>0?d.done.map(a=>{const st2=actStyle(a);return <span key={a} style={pl(st2.bg,st2.tx)}>{a}</span>;}):<span style={{fontSize:11,color:C.t3}}>{d.future?"—":"Rest day"}</span>}
+                {rest?<span style={pl(C.purpBg,C.purpTx)}>Rest day</span>:d.done.length>0?d.done.map(a=>{const st2=actStyle(a);return <span key={a} style={pl(st2.bg,st2.tx)}>{a}</span>;}):<span style={{fontSize:11,color:C.t3}}>{d.future?"—":"No activity"}</span>}
                 {someMissed&&<span style={{width:6,height:6,borderRadius:"50%",background:C.red,marginLeft:4}} title="Some habits missed"/>}
                 {st>0&&<span style={{...pl(st>=10000?C.grnBg:C.ambBg,st>=10000?C.grnTx:C.ambTx),marginLeft:"auto"}}>{(st/1000).toFixed(1)}k</span>}
               </div>
@@ -860,7 +950,7 @@ function HQ(){
       </div>}
 
       <div style={card}>
-        <div style={cHead}><div style={{fontSize:15,fontWeight:700,color:C.txt}}>Log a meal</div></div>
+        <div style={cHead}><div style={{fontSize:15,fontWeight:700,color:C.txt}}>{mealDraft&&mealDraft._editingId?"Edit meal":"Log a meal"}</div>{mealDraft&&mealDraft._editingId&&<span style={pl(C.bluBg,C.bluTx)}>Editing</span>}</div>
         <div style={{padding:14}}>
           {!mealDraft&&<>
             <textarea value={mealIn} onChange={e=>setMealIn(e.target.value)} placeholder="e.g. 4 eggs, 200g chicken, 250g greek yoghurt" style={{...inp,minHeight:60,resize:"vertical",fontFamily:"inherit"}}/>
@@ -868,20 +958,27 @@ function HQ(){
             {mealErr&&<div style={{fontSize:12,color:C.redTx,marginTop:8,padding:"8px 10px",background:C.redBg,borderRadius:8}}>{mealErr}</div>}
           </>}
           {mealDraft&&<div>
-            <div style={{fontSize:12,color:C.t2,marginBottom:8}}>Review — tap any number to adjust</div>
-            {mealDraft.items.map((it,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:i<mealDraft.items.length-1?"1px solid "+C.bdr:"none"}}>
-              <div style={{fontSize:13,color:C.txt,flex:1,paddingRight:8}}>{it.name}</div>
+            <div style={{fontSize:12,color:mealDraft._editingId?C.vioTx:C.t2,marginBottom:8,fontWeight:mealDraft._editingId?600:400}}>{mealDraft._editingId?"Editing meal":"Review"} — tap any number to adjust</div>
+            {mealDraft._editingId&&<input value={mealDraft.input} onChange={e=>setMealDraft(d=>({...d,input:e.target.value}))} placeholder="Meal description" style={{...inp,fontSize:13}}/>}
+            {mealDraft.items.map((it,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:i<mealDraft.items.length-1?"1px solid "+C.bdr:"none",gap:6}}>
+              <div style={{fontSize:13,color:C.txt,flex:1,paddingRight:4,minWidth:0}}>{it.name}</div>
               <div style={{display:"flex",alignItems:"center",gap:4}}>
                 <input type="number" value={it.protein} onChange={e=>updMealItem(i,e.target.value)} style={{width:50,padding:"4px 8px",borderRadius:8,border:"1px solid "+C.bdr,fontSize:13,fontWeight:700,color:C.coralTx,background:C.coralBg,textAlign:"right",outline:"none"}}/>
                 <span style={{fontSize:12,color:C.t2}}>g</span>
+                <button onClick={()=>{const items=mealDraft.items.filter((_,x)=>x!==i);const total=items.reduce((a,it)=>a+(it.protein||0),0);setMealDraft({...mealDraft,items,total});}} style={{width:22,height:22,borderRadius:6,border:"none",background:C.redBg,cursor:"pointer",color:C.redTx,fontSize:12,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
               </div>
             </div>)}
+            <div style={{display:"flex",gap:6,marginTop:8}}>
+              <input placeholder="Add item (e.g. 'apple')" id="mealAddName" style={{...inp,flex:1,marginBottom:0,fontSize:12}}/>
+              <input type="number" placeholder="g" id="mealAddP" style={{...inp,width:60,marginBottom:0,fontSize:12}}/>
+              <button onClick={()=>{const n=document.getElementById("mealAddName");const p=document.getElementById("mealAddP");if(!n.value.trim())return;const items=[...mealDraft.items,{name:n.value.trim(),protein:parseInt(p.value)||0}];const total=items.reduce((a,it)=>a+(it.protein||0),0);setMealDraft({...mealDraft,items,total});n.value="";p.value="";}} style={btnP(C.coral)}>Add</button>
+            </div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0 0",borderTop:"2px solid "+C.bdr,marginTop:8}}>
               <div style={{fontSize:14,fontWeight:700,color:C.txt}}>Total</div>
               <div style={{fontSize:18,fontWeight:700,color:C.coralTx}}>{mealDraft.total}g</div>
             </div>
             <div style={{display:"flex",gap:8,marginTop:14}}>
-              <button onClick={saveMeal} style={{...btnP(C.grn),flex:1,padding:12,fontSize:14}}>Save meal</button>
+              <button onClick={saveMeal} style={{...btnP(C.grn),flex:1,padding:12,fontSize:14}}>{mealDraft._editingId?"Update meal":"Save meal"}</button>
               <button onClick={()=>{setMealDraft(null);setMealIn("");}} style={{padding:"12px 18px",borderRadius:10,border:"1px solid "+C.bdr,cursor:"pointer",background:"transparent",color:C.t2,fontSize:13,fontFamily:"inherit"}}>Cancel</button>
             </div>
           </div>}
@@ -898,7 +995,10 @@ function HQ(){
             </div>
             <div style={{textAlign:"right",flexShrink:0}}>
               <div style={{fontSize:16,fontWeight:700,color:C.coralTx}}>{m.total}g</div>
-              <button onClick={()=>delMeal(m.id)} style={{fontSize:10,color:C.t3,background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",marginTop:2,padding:0}}>Delete</button>
+              <div style={{display:"flex",gap:6,marginTop:4,justifyContent:"flex-end"}}>
+                <button onClick={()=>editMeal(m)} style={{fontSize:10,color:C.blu,background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",padding:0,fontWeight:600}}>Edit</button>
+                <button onClick={()=>delMeal(m.id)} style={{fontSize:10,color:C.t3,background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",padding:0}}>Delete</button>
+              </div>
             </div>
           </div>
         </div>)}
@@ -948,6 +1048,49 @@ function HQ(){
           <button onClick={()=>{const v=(reflectIn||reflections[TD]||"").trim();upd(d=>{const n={...d.reflections};if(v)n[TD]=v;else delete n[TD];return{reflections:n};});setReflectIn("");}} style={{...btnP(C.grn),width:"100%"}}>Save reflection</button>
           {reflections[TD]&&!reflectIn&&<div style={{fontSize:11,color:C.t3,marginTop:6,textAlign:"center"}}>Saved. Edit above to update.</div>}
         </div>
+      </div>
+
+      {/* ═══ PLAN TOMORROW ═══ */}
+      <div style={{...card,borderLeft:"4px solid "+C.blu}}>
+        <div style={cHead}>
+          <div><div style={{fontSize:15,fontWeight:700,color:C.txt}}>Plan tomorrow</div><div style={{fontSize:11,color:C.t2,marginTop:1}}>{fmtFull(TMR)}</div></div>
+          {planTmr&&!showPlanTmr&&<button onClick={delTmrPlan} style={{fontSize:11,color:C.t3,background:"none",border:"none",cursor:"pointer",fontFamily:"inherit"}}>Clear</button>}
+        </div>
+        {!showPlanTmr&&!planTmr&&<div style={{padding:"16px 16px"}}>
+          <div style={{fontSize:12,color:C.t2,marginBottom:10,lineHeight:1.5}}>Lock in your intentions. Pick activities, pin must-do tasks. You'll see it on the Today screen tomorrow morning.</div>
+          <button onClick={()=>{setPlanDraft({acts:[],note:""});setShowPlanTmr(true);}} style={{...btnP(C.blu),width:"100%",padding:12,fontSize:14}}>+ Plan tomorrow</button>
+        </div>}
+        {!showPlanTmr&&planTmr&&<div style={{padding:"12px 16px"}}>
+          <div style={{fontSize:11,fontWeight:700,color:C.bluTx,marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Set</div>
+          {(planTmr.acts||[]).length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
+            {planTmr.acts.map(a=>{const st=actStyle(a);return <span key={a} style={pl(st.bg,st.tx)}>{a}</span>;})}
+          </div>}
+          {planTmr.note&&<div style={{fontSize:12,color:C.t2,fontStyle:"italic",marginBottom:8}}>"{planTmr.note}"</div>}
+          {tasks.filter(t=>t.mustDoDate===TMR&&!t.done).length>0&&<div>
+            <div style={{fontSize:10,fontWeight:700,color:C.amb,marginBottom:4,textTransform:"uppercase",letterSpacing:0.6}}>Must do</div>
+            {tasks.filter(t=>t.mustDoDate===TMR&&!t.done).map(t=><div key={t.id} style={{fontSize:12,color:C.txt,padding:"2px 0"}}>★ {t.text}</div>)}
+          </div>}
+          <button onClick={()=>{setPlanDraft({acts:planTmr.acts||[],note:planTmr.note||""});setShowPlanTmr(true);}} style={{...btnP(C.bluBg,C.bluTx),marginTop:8,padding:"8px 12px",fontSize:12}}>Edit plan</button>
+        </div>}
+        {showPlanTmr&&<div style={{padding:"14px 16px"}}>
+          <div style={{fontSize:12,fontWeight:600,color:C.txt,marginBottom:6}}>What will you train?</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
+            {customActs.map(a=>{const picked=planDraft.acts.includes(a);const st=actStyle(a);return <button key={a} onClick={()=>setPlanDraft(p=>({...p,acts:picked?p.acts.filter(x=>x!==a):[...p.acts,a]}))} style={{padding:"6px 12px",borderRadius:99,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",border:picked?"2px solid "+st.color:"1px solid "+C.bdr,background:picked?st.bg:"transparent",color:picked?st.tx:C.t2}}>{picked?"✓ ":""}{a}</button>;})}
+          </div>
+          <div style={{fontSize:12,fontWeight:600,color:C.txt,marginBottom:6}}>Pin must-do tasks (optional)</div>
+          <div style={{marginBottom:10,maxHeight:160,overflowY:"auto"}}>
+            {tasks.filter(t=>!t.done&&(t.due===TMR||t.due<=TMR)).slice(0,10).length===0?<div style={{fontSize:11,color:C.t3,padding:"8px 0"}}>No tasks available.</div>:tasks.filter(t=>!t.done&&(t.due===TMR||t.due<=TMR)).slice(0,10).map(t=>{const pinned=t.mustDoDate===TMR;const c=gc(t.cat);return <div key={t.id} onClick={()=>togglePinDate(t.id,TMR)} style={{padding:"8px 10px",display:"flex",gap:8,alignItems:"center",border:"1px solid "+(pinned?C.amb:C.bdr),borderRadius:8,marginBottom:4,cursor:"pointer",background:pinned?C.ambBg:"transparent"}}>
+              <span style={{fontSize:14,color:pinned?C.amb:C.t3}}>★</span>
+              <div style={{flex:1,fontSize:12,color:C.txt,fontWeight:pinned?600:500}}>{t.text}</div>
+              <span style={{...pl(c.bg,c.tx),fontSize:10}}>{c.label}</span>
+            </div>;})}
+          </div>
+          <input value={planDraft.note} onChange={e=>setPlanDraft(p=>({...p,note:e.target.value}))} placeholder="One line of intent (optional) — e.g. 'Hit protein by 3pm'" style={inp}/>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={saveTmrPlan} style={{...btnP(C.blu),flex:1,padding:12,fontSize:14}}>Lock in</button>
+            <button onClick={()=>setShowPlanTmr(false)} style={{padding:"12px 20px",borderRadius:10,border:"1px solid "+C.bdr,cursor:"pointer",background:"transparent",fontSize:13,color:C.t2}}>Cancel</button>
+          </div>
+        </div>}
       </div>
 
       {/* HABIT HEATMAP */}
