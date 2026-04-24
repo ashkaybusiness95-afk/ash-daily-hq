@@ -185,6 +185,7 @@ function HQ(){
   const[planDraft,setPlanDraft]=useState({acts:[],note:""});
   const[showFoodMgr,setShowFoodMgr]=useState(false);
   const[newFoodN,setNewFoodN]=useState("");const[newFoodP,setNewFoodP]=useState("");
+  const[aiFoodSugg,setAiFoodSugg]=useState("");const[aiFoodLoad,setAiFoodLoad]=useState(false);
   const fileRef=useRef(null);
   const[showSettings,setShowSettings]=useState(false);
 
@@ -227,6 +228,21 @@ function HQ(){
       }
     });
     if(toAdd.length>0)setData(function(p){return Object.assign({},p,{tasks:p.tasks.concat(toAdd)});});
+
+    // Auto-roll: pinned tasks not done from past dates move to today (user said "auto leave on for tomorrow")
+    var hadRoll=false;
+    var rolledTasks=data.tasks.map(function(t){
+      if(!t.done&&t.mustDoDate&&t.mustDoDate<TD){hadRoll=true;return Object.assign({},t,{mustDoDate:TD});}
+      return t;
+    });
+    var rolledProjects=data.projects.map(function(p){
+      return Object.assign({},p,{subtasks:(p.subtasks||[]).map(function(st){
+        if(!st.done&&st.mustDoDate&&st.mustDoDate<TD){hadRoll=true;return Object.assign({},st,{mustDoDate:TD});}
+        return st;
+      })});
+    });
+    if(hadRoll)setData(function(p){return Object.assign({},p,{tasks:rolledTasks,projects:rolledProjects});});
+
     // Restore saved weekly review for current week
     if(data.weeklyReviews&&data.weeklyReviews[thisWeekStart]&&data.weeklyReviews[thisWeekStart].text)setWkAi(data.weeklyReviews[thisWeekStart].text);
   },[data]);
@@ -259,6 +275,11 @@ function HQ(){
   const dayProteinPct=Math.min(100,Math.round((dayProtein/proteinTarget)*100));
   const proteinDeficit=Math.max(0,proteinTarget-dayProtein);
 
+  const mealSlotFromHour=h=>h<11?"breakfast":h<15?"lunch":h<19?"dinner":"snack";
+  const SLOT_ORDER=["breakfast","lunch","dinner","snack"];
+  const SLOT_LABEL={breakfast:"Breakfast",lunch:"Lunch",dinner:"Dinner",snack:"Snacks"};
+  const SLOT_COLOR={breakfast:{bg:C.ambBg,tx:C.ambTx,c:C.amb},lunch:{bg:C.grnBg,tx:C.grnTx,c:C.grn},dinner:{bg:C.purpBg,tx:C.purpTx,c:C.purp},snack:{bg:C.bluBg,tx:C.bluTx,c:C.blu}};
+  const setMealSlot=(id,slot)=>upd(d=>({meals:(d.meals||[]).map(m=>m.id===id?{...m,slot}:m)}));
   const parseMeal=(input)=>{
     if(!apiKey){setMealErr("Add your API key (⚙ top right).");return;}
     if(!input.trim())return;
@@ -282,13 +303,13 @@ function HQ(){
     if(mealDraft._editingId){
       upd(d=>({meals:(d.meals||[]).map(m=>m.id===mealDraft._editingId?{...m,input:mealDraft.input,items:mealDraft.items,total:mealDraft.total}:m)}));
     }else{
-      upd(d=>({meals:[{id:uid(),date:foodDate,input:mealDraft.input,items:mealDraft.items,total:mealDraft.total,time:new Date().toISOString()},...(d.meals||[])]}));
+      upd(d=>({meals:[{id:uid(),date:foodDate,input:mealDraft.input,items:mealDraft.items,total:mealDraft.total,time:new Date().toISOString(),slot:mealSlotFromHour(now.getHours())},...(d.meals||[])]}));
     }
     setMealDraft(null);setMealIn("");setMealErr("");
   };
   const editMeal=m=>{setMealDraft({input:m.input,items:m.items||[],total:m.total,_editingId:m.id});setMealErr("");window.scrollTo({top:0,behavior:"smooth"});};
   const quickAdd=(food)=>{
-    upd(d=>({meals:[{id:uid(),date:foodDate,input:food.name,items:[{name:food.name,protein:food.protein}],total:food.protein,time:new Date().toISOString()},...(d.meals||[])]}));
+    upd(d=>({meals:[{id:uid(),date:foodDate,input:food.name,items:[{name:food.name,protein:food.protein}],total:food.protein,time:new Date().toISOString(),slot:mealSlotFromHour(now.getHours())},...(d.meals||[])]}));
   };
   const delMeal=id=>upd(d=>({meals:(d.meals||[]).filter(m=>m.id!==id)}));
   const updMealItem=(idx,newP)=>{if(!mealDraft)return;const items=mealDraft.items.map((it,i)=>i===idx?{...it,protein:parseInt(newP)||0}:it);const total=items.reduce((a,it)=>a+(it.protein||0),0);setMealDraft({...mealDraft,items,total});};
@@ -321,7 +342,10 @@ function HQ(){
   // ─── PIN / MUST-DO ───
   const togglePin=id=>upd(d=>({tasks:d.tasks.map(t=>t.id===id?{...t,mustDoDate:t.mustDoDate===TD?null:TD}:t)}));
   const togglePinDate=(id,date)=>upd(d=>({tasks:d.tasks.map(t=>t.id===id?{...t,mustDoDate:t.mustDoDate===date?null:date}:t)}));
+  const togglePinSub=(pid,sid,date)=>upd(d=>({projects:d.projects.map(p=>p.id===pid?{...p,subtasks:p.subtasks.map(st=>st.id===sid?{...st,mustDoDate:st.mustDoDate===(date||TD)?null:(date||TD)}:st)}:p)}));
   const mustDoToday=tasks.filter(t=>!t.done&&t.mustDoDate===TD);
+  const mustDoSubs=[];projects.forEach(p=>{if(p.status==="done")return;(p.subtasks||[]).forEach(st=>{if(!st.done&&st.mustDoDate===TD)mustDoSubs.push({...st,_pid:p.id,_pt:p.title});});});
+  const mustDoAll=[...mustDoToday,...mustDoSubs];
 
   // ─── REST DAY ───
   const isRest=d=>!!restDays[d||actDate];
@@ -396,6 +420,25 @@ function HQ(){
   // ─── DAILY SCORE (simple X/Y) ───
   const dailyScore=todayDone.length+doneTodayC+(proteinHitToday?1:0);
   const dailyTotal=customActs.length+totalTodayC+1;
+
+  // ─── MOMENTUM: streak + weekly best (no XP gimmicks) ───
+  // Count consecutive past days with score ≥ 50% (not including today, not including rest days)
+  const getScoreForDate=d=>{
+    const dayActs=customActs.filter(a=>!!acts[a+"-"+d]).length;
+    const dayTasks=tasks.filter(t=>t.done&&t.due===d).length;
+    const dayTaskTotal=tasks.filter(t=>t.due===d).length;
+    const dayProt=(meals||[]).filter(m=>m.date===d).reduce((a,m)=>a+(m.total||0),0);
+    const hit=dayProt>=proteinTarget*0.9?1:0;
+    const total=customActs.length+dayTaskTotal+1;
+    const score=dayActs+dayTasks+hit;
+    return total>0?score/total:0;
+  };
+  let activeStreak=0;
+  for(let i=1;i<=60;i++){const d=dateShift(TD,-i);if(restDays[d]){continue;}if(getScoreForDate(d)>=0.5)activeStreak++;else break;}
+  // Best week % in last 12 weeks
+  let bestWeekPct=0,bestWeekStart="";
+  for(let w=0;w<12;w++){const ws=dateShift(thisWeekStart,-7*w);let done=0,poss=0;for(let dd=0;dd<7;dd++){const d=dateShift(ws,dd);if(d>TD||restDays[d])continue;done+=customActs.filter(a=>!!acts[a+"-"+d]).length;poss+=customActs.length;}if(poss>0){const pct=Math.round((done/poss)*100);if(pct>bestWeekPct){bestWeekPct=pct;bestWeekStart=ws;}}}
+  const beatingBest=wkRate>bestWeekPct;
 
   // ─── AI ───
   const genWeeklyAI=()=>{
@@ -505,7 +548,7 @@ function HQ(){
     {tab==="today"&&<div className="fade-in">
 
       {/* ═══ HERO BLOCK — MUST DO + PLANNED ═══ */}
-      {(mustDoToday.length>0||(planToday&&(planToday.acts||[]).length>0))&&<div style={{...card,borderTop:"4px solid "+C.grn,background:"linear-gradient(180deg,#fcfbf8 0%,"+C.card+" 100%)",marginBottom:14}}>
+      {(mustDoAll.length>0||(planToday&&(planToday.acts||[]).length>0)||activeStreak>=2)&&<div style={{...card,borderTop:"4px solid "+C.grn,background:"linear-gradient(180deg,#fcfbf8 0%,"+C.card+" 100%)",marginBottom:14}}>
         <div style={{padding:"16px 16px 8px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:12}}>
             <div>
@@ -513,12 +556,28 @@ function HQ(){
               <div style={{fontSize:22,fontFamily:"'Playfair Display',serif",fontWeight:600,color:C.txt,marginTop:2,lineHeight:1.1}}>{dailyScore}<span style={{color:C.t3,fontSize:18}}>/{dailyTotal}</span> <span style={{fontSize:14,color:C.t2,fontFamily:"'DM Sans',sans-serif",fontWeight:500}}>done so far</span></div>
             </div>
           </div>
-          {mustDoToday.length>0&&<div style={{marginBottom:10}}>
-            <div style={{fontSize:11,fontWeight:700,color:C.red,marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Must do ({mustDoToday.length})</div>
-            {mustDoToday.map((t,i)=>{const c=gc(t.cat);return <div key={t.id} style={{padding:"10px 12px",display:"flex",gap:10,alignItems:"center",background:C.card,border:"1.5px solid "+C.red+"30",borderRadius:10,marginBottom:i<mustDoToday.length-1?6:0}}>
-              <button onClick={()=>tglDone(t.id)} style={{width:22,height:22,borderRadius:7,flexShrink:0,border:"2px solid "+C.red,background:"transparent",cursor:"pointer"}}/>
-              <div style={{flex:1,minWidth:0,fontSize:14,fontWeight:600,color:C.txt}}>{t.text}</div>
-              <button onClick={()=>togglePin(t.id)} style={{background:"none",border:"none",cursor:"pointer",fontSize:16,color:C.amb,padding:4}} title="Unpin">★</button>
+
+          {/* MOMENTUM STRIP */}
+          {(activeStreak>=2||bestWeekPct>0)&&<div style={{display:"grid",gridTemplateColumns:activeStreak>=2&&bestWeekPct>0?"1fr 1fr":"1fr",gap:8,marginBottom:12}}>
+            {activeStreak>=2&&<div style={{padding:"8px 10px",borderRadius:10,background:C.grnBg,border:"1px solid "+C.grn+"30"}}>
+              <div style={{fontSize:9,fontWeight:700,color:C.grnTx,textTransform:"uppercase",letterSpacing:0.6}}>Active streak</div>
+              <div style={{fontSize:18,fontWeight:700,color:C.grnTx,display:"flex",alignItems:"center",gap:4,marginTop:2}}>{activeStreak} {Ico.flame}<span style={{fontSize:11,color:C.t2,fontWeight:500,marginLeft:2}}>days</span></div>
+            </div>}
+            {bestWeekPct>0&&<div style={{padding:"8px 10px",borderRadius:10,background:beatingBest?C.grnBg:C.ambBg,border:"1px solid "+(beatingBest?C.grn:C.amb)+"30"}}>
+              <div style={{fontSize:9,fontWeight:700,color:beatingBest?C.grnTx:C.ambTx,textTransform:"uppercase",letterSpacing:0.6}}>{beatingBest?"New best pace":"Best week: "+bestWeekPct+"%"}</div>
+              <div style={{fontSize:18,fontWeight:700,color:beatingBest?C.grnTx:C.ambTx,marginTop:2}}>{wkRate}%<span style={{fontSize:11,color:C.t2,fontWeight:500,marginLeft:4}}>this wk{!beatingBest&&bestWeekPct>wkRate?" · "+(bestWeekPct-wkRate)+" to beat":""}</span></div>
+            </div>}
+          </div>}
+
+          {mustDoAll.length>0&&<div style={{marginBottom:10}}>
+            <div style={{fontSize:11,fontWeight:700,color:C.red,marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Must do ({mustDoAll.length})</div>
+            {mustDoAll.map((t,i)=>{const isSub=!!t._isSub||!!t._pid;const c=!isSub?gc(t.cat):null;return <div key={t.id+(isSub?"s":"")} style={{padding:"10px 12px",display:"flex",gap:10,alignItems:"center",background:C.card,border:"1.5px solid "+C.red+"30",borderRadius:10,marginBottom:i<mustDoAll.length-1?6:0}}>
+              <button onClick={()=>{if(isSub)tglSub(t._pid,t.id);else tglDone(t.id);}} style={{width:22,height:22,borderRadius:7,flexShrink:0,border:"2px solid "+C.red,background:"transparent",cursor:"pointer"}}/>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:14,fontWeight:600,color:C.txt}}>{t.text}</div>
+                {isSub&&<div style={{fontSize:10,color:C.vio,marginTop:2}}>{t._pt}</div>}
+              </div>
+              <button onClick={()=>{if(isSub)togglePinSub(t._pid,t.id,TD);else togglePin(t.id);}} style={{background:"none",border:"none",cursor:"pointer",fontSize:16,color:C.amb,padding:4}} title="Unpin">★</button>
             </div>;})}
           </div>}
           {planToday&&(planToday.acts||[]).length>0&&<div style={{padding:"10px 12px",background:C.bluBg,borderRadius:10,marginBottom:8}}>
@@ -532,35 +591,59 @@ function HQ(){
       </div>}
 
       {/* ═══ END HERO ═══ */}
+
+      {/* ═══ QUICK-LOG BAR — one-tap from home ═══ */}
+      <div style={{...card,background:"#fafaf7"}}>
+        <div style={{padding:"12px 14px"}}>
+          <div style={{fontSize:10,fontWeight:700,color:C.t2,textTransform:"uppercase",letterSpacing:0.8,marginBottom:8}}>Quick log</div>
+          {/* Habits row */}
+          <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:8}}>
+            {customActs.map(name=>{const done=isA(name,TD);const st=actStyle(name);return <button key={name} onClick={()=>tgl(name,TD)} style={{padding:"6px 10px",borderRadius:99,fontFamily:"inherit",fontSize:11,fontWeight:600,cursor:"pointer",border:done?"none":"1px solid "+C.bdr,background:done?st.color:C.card,color:done?"#fff":C.t2,display:"flex",alignItems:"center",gap:4}}>{done?"✓ ":""}{name}</button>;})}
+          </div>
+          {/* Protein row */}
+          <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap"}}>
+            <span style={{fontSize:11,color:C.coralTx,fontWeight:700,marginRight:2}}>{todayProtein}/{proteinTarget}g</span>
+            {foods.slice(0,5).map((f,i)=><button key={i} onClick={()=>{upd(d=>({meals:[{id:uid(),date:TD,input:f.name,items:[{name:f.name,protein:f.protein}],total:f.protein,time:new Date().toISOString(),slot:mealSlotFromHour(now.getHours())},...(d.meals||[])]}));}} style={{padding:"5px 9px",borderRadius:99,fontFamily:"inherit",fontSize:10,fontWeight:600,cursor:"pointer",border:"1px solid "+C.bdr,background:C.card,color:C.coralTx,display:"flex",alignItems:"center",gap:3}}>+{f.protein}g <span style={{color:C.t3,fontWeight:500}}>{f.name.length>12?f.name.slice(0,12)+"…":f.name}</span></button>)}
+            <button onClick={()=>setTab("food")} style={{padding:"5px 10px",borderRadius:99,fontFamily:"inherit",fontSize:10,fontWeight:600,cursor:"pointer",border:"1px dashed "+C.bdr,background:"transparent",color:C.t2}}>more →</button>
+          </div>
+        </div>
+      </div>
+
+      {/* ═══ OVERDUE WARNING ═══ */}
+      {tasks.filter(t=>!t.done&&t.due<dateShift(TD,-2)).length>0&&<div style={{...card,background:C.redBg,border:"1px solid "+C.red+"40",padding:"10px 14px",display:"flex",alignItems:"center",gap:10}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:11,fontWeight:700,color:C.redTx,textTransform:"uppercase",letterSpacing:0.6}}>Old overdue tasks piling up</div>
+          <div style={{fontSize:12,color:C.redTx,marginTop:2}}>{tasks.filter(t=>!t.done&&t.due<dateShift(TD,-2)).length} tasks overdue 3+ days. Decide: do, reschedule, or delete.</div>
+        </div>
+        <button onClick={()=>{setTab("tasks");setVm("overdue");}} style={{padding:"8px 12px",borderRadius:8,border:"none",background:C.red,color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Review</button>
+      </div>}
+
+      {/* ═══ SATURDAY WEIGH-IN NUDGE ═══ */}
+      {now.getDay()===6&&now.getHours()<14&&(!body[0]||body[0].date<dateShift(TD,-4))&&<div style={{...card,background:C.bluBg,border:"1px solid "+C.blu+"40",padding:"12px 14px",display:"flex",alignItems:"center",gap:10}}>
+        <div style={{fontSize:22}}>⚖️</div>
+        <div style={{flex:1}}>
+          <div style={{fontSize:12,fontWeight:700,color:C.bluTx}}>Saturday weigh-in</div>
+          <div style={{fontSize:11,color:C.bluTx,marginTop:1}}>First thing — fasted, post-toilet. Only the trend matters.</div>
+        </div>
+        <button onClick={()=>{setTab("activity");setAddB(true);}} style={{padding:"8px 12px",borderRadius:8,border:"none",background:C.blu,color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Log</button>
+      </div>}
+
       <div style={card}>
-        <div style={cHead}>
-          <div><div style={{fontSize:15,fontWeight:700,color:C.txt}}>Today's tasks</div><div style={{fontSize:12,color:C.t2,marginTop:1}}>{allToday.length} to do</div></div>
-          <button onClick={()=>{setTab("tasks");setAddT(true);}} style={btnP(C.grn)}>+ Add</button>
+        <div style={{padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:600,color:C.txt}}>Tasks</div>
+            <div style={{fontSize:11,color:C.t2,marginTop:1}}>{allToday.length} open{overdueC>0?" · "+overdueC+" overdue":""}{mustDoAll.length>0?" · "+mustDoAll.length+" pinned":""}</div>
+          </div>
+          <div style={{display:"flex",gap:6}}>
+            <button onClick={()=>{const list=mustDoAll.length>0?mustDoAll:allToday;if(list.length===0){alert("No tasks");return;}const text="Today's tasks:\n"+list.map((t,i)=>(i+1)+". "+t.text).join("\n");navigator.clipboard&&navigator.clipboard.writeText(text).then(()=>alert("Copied — paste into Google Keep for Gemini/Echo"),()=>alert(text));}} style={{padding:"8px 10px",borderRadius:10,border:"1px solid "+C.bdr,cursor:"pointer",background:"transparent",fontSize:11,fontWeight:600,color:C.t2,fontFamily:"inherit"}} title="Copy to clipboard — paste into Google Keep for Gemini to read">📋 Copy</button>
+            <button onClick={()=>setTab("tasks")} style={{padding:"8px 14px",borderRadius:10,border:"1px solid "+C.bdr,cursor:"pointer",background:"transparent",fontSize:12,fontWeight:600,color:C.t2,fontFamily:"inherit"}}>View all</button>
+            <button onClick={()=>{setTab("tasks");setAddT(true);}} style={btnP(C.grn)}>+ Add</button>
+          </div>
         </div>
-        {allToday.length===0&&<div style={{padding:"28px 16px",textAlign:"center"}}>
-          <div style={{fontSize:28,marginBottom:6,opacity:0.3}}>✓</div>
-          <div style={{color:C.t3,fontSize:13}}>Nothing to do. Add a task or pick a template.</div>
+        {allToday.length===0&&<div style={{padding:"4px 16px 16px",textAlign:"center"}}>
+          <div style={{color:C.t3,fontSize:12}}>Nothing to do. Add a task from Tasks tab.</div>
         </div>}
-        {allToday.map((t,i)=>{
-          const isSub=!!t._isSub;const c=isSub?null:gc(t.cat);const od=!isSub&&t.due<TD;
-          return <div key={t.id+(isSub?"s":"")} style={{padding:"10px 16px",display:"flex",gap:10,alignItems:"center",borderBottom:i<allToday.length-1?"1px solid "+C.bdr:"none"}}>
-            <button onClick={()=>{if(isSub)tglSub(t._pid,t.id);else tglDone(t.id);}} style={{width:22,height:22,borderRadius:7,flexShrink:0,border:"2px solid "+(od?C.red:isSub?C.vio:c.c),background:"transparent",cursor:"pointer"}}/>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:13,fontWeight:500,color:C.txt}}>{t.text}</div>
-              <div style={{display:"flex",gap:6,marginTop:3,flexWrap:"wrap"}}>
-                {isSub&&<span style={pl(C.vioBg,C.vioTx)}>{t._pt}</span>}
-                {!isSub&&<span style={pl(c.bg,c.tx)}>{c.label}</span>}
-                {!isSub&&t.pri==="urgent"&&<span style={pl(C.redBg,C.redTx)}>Urgent</span>}
-                {od&&<span style={{fontSize:11,fontWeight:600,color:C.red}}>Overdue</span>}
-                {!isSub&&t.recur&&<span style={pl(C.bluBg,C.bluTx)}>{t.recur}</span>}
-              </div>
-            </div>
-            <a href={calUrl(t.text,t.due)} target="_blank" rel="noopener" style={{padding:6,color:C.grn,display:"flex"}}>{Ico.cal}</a>
-          </div>;
-        })}
-        <div style={{padding:"8px 16px 12px",display:"flex",gap:6,overflowX:"auto"}}>
-          {TMPLS.slice(0,3).map((t,i)=><button key={i} onClick={()=>upd(d=>({tasks:[{id:uid(),text:t,cat:"property",due:TD,pri:"normal",done:false,created:TD,recur:""},...d.tasks]}))} style={{padding:"5px 10px",borderRadius:99,border:"1px solid "+C.bdr,cursor:"pointer",background:"transparent",fontSize:11,color:C.t2,whiteSpace:"nowrap",fontFamily:"inherit"}}>+ {t}</button>)}
-        </div>
+        {allToday.length>0&&mustDoAll.length===0&&<div style={{padding:"0 16px 12px",fontSize:11,color:C.amb,fontStyle:"italic"}}>No must-dos pinned. Star tasks from Tasks tab to focus.</div>}
       </div>
 
       {activeP.length>0&&<div style={card}>
@@ -738,6 +821,7 @@ function HQ(){
                 <button onClick={()=>tglSub(p.id,st.id)} style={{width:20,height:20,borderRadius:6,flexShrink:0,border:st.done?"none":"2px solid "+C.vio,background:st.done?C.grn:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff"}}>{st.done&&Ico.check}</button>
                 <div style={{flex:1,fontSize:13,color:C.txt,textDecoration:st.done?"line-through":"none"}}>{st.text}</div>
                 {st.due&&<span style={{fontSize:10,color:C.t3}}>{fmt(st.due)}</span>}
+                {!st.done&&<button onClick={()=>togglePinSub(p.id,st.id,TD)} style={{width:22,height:22,borderRadius:6,border:"none",background:st.mustDoDate===TD?C.amb:"transparent",cursor:"pointer",color:st.mustDoDate===TD?"#fff":C.t3,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}} title="Must-do today">★</button>}
                 <button onClick={()=>delSub(p.id,st.id)} style={{width:20,height:20,borderRadius:6,border:"none",background:C.redBg,cursor:"pointer",color:C.redTx,display:"flex",alignItems:"center",justifyContent:"center"}}>{Ico.trash}</button>
               </div>)}
               {addSub===p.id?<div style={{padding:"8px 16px",display:"flex",gap:6,flexWrap:"wrap"}}>
@@ -840,10 +924,21 @@ function HQ(){
       {/* STEPS */}
       <div style={card}>
         <div style={cHead}><div style={{fontSize:15,fontWeight:700,color:C.txt}}>Steps</div>{getSteps()>0&&<span style={pl(getSteps()>=10000?C.grnBg:C.ambBg,getSteps()>=10000?C.grnTx:C.ambTx)}>{getSteps().toLocaleString()}</span>}</div>
-        <div style={{padding:"12px 16px",display:"flex",gap:8,alignItems:"center"}}>
-          <input type="number" value={stepsIn!==""?stepsIn:(getSteps()||"")} onChange={e=>setStepsIn(e.target.value)} placeholder="Steps" style={{...inp,flex:1,marginBottom:0}}/>
-          <button onClick={()=>{setSteps(actDate,stepsIn);setStepsIn("");}} style={btnP(C.grn)}>Save</button>
-          {getSteps()>0&&<button onClick={()=>{setSteps(actDate,0);setStepsIn("");}} style={{padding:"10px 12px",borderRadius:10,border:"1px solid "+C.bdr,cursor:"pointer",background:"transparent",color:C.t2,fontSize:13}}>Clear</button>}
+        <div style={{padding:"14px 16px"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+            <button onClick={()=>setSteps(actDate,Math.max(0,getSteps()-1000))} style={{width:40,height:40,borderRadius:10,border:"1px solid "+C.bdr,cursor:"pointer",background:C.card,fontSize:14,fontWeight:600,color:C.txt,fontFamily:"inherit"}}>−1k</button>
+            <button onClick={()=>setSteps(actDate,Math.max(0,getSteps()-500))} style={{width:40,height:40,borderRadius:10,border:"1px solid "+C.bdr,cursor:"pointer",background:C.card,fontSize:13,fontWeight:600,color:C.txt,fontFamily:"inherit"}}>−500</button>
+            <div style={{flex:1,textAlign:"center",padding:"8px",borderRadius:10,background:getSteps()>=10000?C.grnBg:getSteps()>0?C.ambBg:"transparent",border:"1px solid "+C.bdr}}>
+              <div style={{fontSize:22,fontWeight:700,color:getSteps()>=10000?C.grnTx:getSteps()>0?C.ambTx:C.t3,fontFamily:"'Playfair Display',serif"}}>{getSteps().toLocaleString()}</div>
+              <div style={{fontSize:9,color:C.t2,fontWeight:600,letterSpacing:0.8}}>STEPS</div>
+            </div>
+            <button onClick={()=>setSteps(actDate,getSteps()+500)} style={{width:40,height:40,borderRadius:10,border:"1px solid "+C.bdr,cursor:"pointer",background:C.card,fontSize:13,fontWeight:600,color:C.txt,fontFamily:"inherit"}}>+500</button>
+            <button onClick={()=>setSteps(actDate,getSteps()+1000)} style={{width:40,height:40,borderRadius:10,border:"1px solid "+C.bdr,cursor:"pointer",background:C.card,fontSize:14,fontWeight:600,color:C.txt,fontFamily:"inherit"}}>+1k</button>
+          </div>
+          <div style={{display:"flex",gap:6}}>
+            {[5000,7500,10000,12500].map(v=><button key={v} onClick={()=>setSteps(actDate,v)} style={{flex:1,padding:"8px 4px",borderRadius:8,border:"1px solid "+C.bdr,cursor:"pointer",background:getSteps()===v?C.grnBg:"transparent",color:getSteps()===v?C.grnTx:C.t2,fontSize:11,fontWeight:600,fontFamily:"inherit"}}>{(v/1000).toFixed(v%1000===0?0:1)}k</button>)}
+            {getSteps()>0&&<button onClick={()=>setSteps(actDate,0)} style={{padding:"8px 12px",borderRadius:8,border:"1px solid "+C.bdr,cursor:"pointer",background:"transparent",color:C.t2,fontSize:11}}>Clear</button>}
+          </div>
         </div>
       </div>
 
@@ -941,11 +1036,23 @@ function HQ(){
 
       {/* SUGGESTIONS IF BEHIND */}
       {proteinDeficit>10&&foodDate===TD&&<div style={card}>
-        <div style={cHead}><div><div style={{fontSize:15,fontWeight:700,color:C.txt}}>Behind by {proteinDeficit}g</div><div style={{fontSize:11,color:C.t2,marginTop:1}}>Closest matches from your foods</div></div></div>
-        <div style={{padding:"10px 12px",display:"flex",flexWrap:"wrap",gap:6}}>
-          {suggested.length===0?<div style={{fontSize:12,color:C.t3,padding:6}}>No matches. Log a custom meal below.</div>:suggested.map((f,i)=><button key={i} onClick={()=>quickAdd(f)} style={{padding:"8px 12px",borderRadius:10,border:"2px solid "+C.coral,cursor:"pointer",background:C.coralBg,fontSize:12,fontWeight:600,color:C.coralTx,fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}>
-            + {f.name}<span style={{fontSize:10,background:"#fff",padding:"2px 6px",borderRadius:6,fontWeight:700}}>{f.protein}g</span>
-          </button>)}
+        <div style={cHead}><div><div style={{fontSize:15,fontWeight:700,color:C.txt}}>Behind by {proteinDeficit}g</div><div style={{fontSize:11,color:C.t2,marginTop:1}}>{now.getHours()<11?"Morning":now.getHours()<15?"Lunch":now.getHours()<18?"Afternoon":"Evening"} — pick something fast</div></div></div>
+        <div style={{padding:"10px 12px"}}>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:aiFoodSugg?10:0}}>
+            {suggested.length===0?<div style={{fontSize:12,color:C.t3,padding:6}}>No matches. Log a custom meal below.</div>:suggested.map((f,i)=><button key={i} onClick={()=>quickAdd(f)} style={{padding:"8px 12px",borderRadius:10,border:"2px solid "+C.coral,cursor:"pointer",background:C.coralBg,fontSize:12,fontWeight:600,color:C.coralTx,fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}>
+              + {f.name}<span style={{fontSize:10,background:"#fff",padding:"2px 6px",borderRadius:6,fontWeight:700}}>{f.protein}g</span>
+            </button>)}
+            <button onClick={()=>{
+              if(!apiKey){setAiFoodSugg("Add API key in ⚙ first.");return;}
+              setAiFoodLoad(true);setAiFoodSugg("");
+              const h=now.getHours();const tod=h<11?"morning":h<15?"lunch":h<18?"afternoon":"evening";
+              const eaten=dayMeals.map(m=>m.input).join("; ")||"nothing yet";
+              callAI(apiKey,"Nutrition coach for Ash — 86kg male, boxing+weights, cutting fat. Direct, no fluff, no emoji. Give 3 specific, quick meals/snacks to hit the protein gap. Each under 15 words. Use real UK supermarket products or simple home items. Consider time of day and what's been eaten. Output format: just 3 numbered bullets, protein g in brackets. No intro, no outro.",
+                "Gap: "+proteinDeficit+"g protein needed\nTime: "+tod+" ("+h+":00)\nAlready eaten today: "+eaten+"\nKeep low-faff. He's busy.",
+                txt=>{setAiFoodSugg(txt);setAiFoodLoad(false);});
+            }} disabled={aiFoodLoad} style={{padding:"8px 12px",borderRadius:10,border:"1.5px dashed "+C.slate,cursor:aiFoodLoad?"default":"pointer",background:"transparent",fontSize:12,fontWeight:600,color:aiFoodLoad?C.t3:C.slate,fontFamily:"inherit"}}>{aiFoodLoad?"Thinking...":"💡 AI suggest"}</button>
+          </div>
+          {aiFoodSugg&&<div style={{padding:12,background:"#fafaf7",borderRadius:10,fontSize:12,lineHeight:1.7,color:C.txt,whiteSpace:"pre-wrap",marginTop:4}}>{aiFoodSugg}<button onClick={()=>setAiFoodSugg("")} style={{display:"block",marginTop:8,fontSize:10,color:C.t3,background:"none",border:"none",cursor:"pointer",fontFamily:"inherit"}}>Dismiss</button></div>}
         </div>
       </div>}
 
@@ -985,13 +1092,33 @@ function HQ(){
         </div>
       </div>
 
+      {/* MEAL SLOT BREAKDOWN — catches back-loading */}
+      {dayMeals.length>0&&<div style={card}>
+        <div style={cHead}><div style={{fontSize:15,fontWeight:700,color:C.txt}}>By meal</div>{(()=>{const slotTotals=SLOT_ORDER.map(s=>dayMeals.filter(m=>(m.slot||mealSlotFromHour(new Date(m.time||0).getHours()))===s).reduce((a,m)=>a+(m.total||0),0));const beforeDinner=slotTotals[0]+slotTotals[1];const backloaded=dayProtein>0&&beforeDinner<dayProtein*0.4&&dayMeals.length>=2;return backloaded?<span style={pl(C.redBg,C.redTx)}>Back-loaded</span>:null;})()}</div>
+        <div style={{padding:"12px 14px"}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+            {SLOT_ORDER.map(slot=>{const slotMeals=dayMeals.filter(m=>(m.slot||mealSlotFromHour(new Date(m.time||0).getHours()))===slot);const slotTotal=slotMeals.reduce((a,m)=>a+(m.total||0),0);const sc=SLOT_COLOR[slot];const pct=proteinTarget>0?Math.min(100,(slotTotal/(proteinTarget/3))*100):0;
+              return <div key={slot} style={{padding:"8px 6px",borderRadius:10,background:slotTotal>0?sc.bg:"transparent",border:"1px solid "+(slotTotal>0?sc.c+"30":C.bdr),textAlign:"center"}}>
+                <div style={{fontSize:9,fontWeight:700,color:slotTotal>0?sc.tx:C.t3,textTransform:"uppercase",letterSpacing:0.5}}>{SLOT_LABEL[slot]}</div>
+                <div style={{fontSize:17,fontWeight:700,color:slotTotal>0?sc.tx:C.t3,fontFamily:"'Playfair Display',serif",marginTop:2}}>{slotTotal}<span style={{fontSize:10,fontFamily:"inherit",fontWeight:500}}>g</span></div>
+                <div style={{fontSize:9,color:C.t3,marginTop:1}}>{slotMeals.length} {slotMeals.length===1?"item":"items"}</div>
+              </div>;
+            })}
+          </div>
+          {(()=>{const beforeDinner=dayMeals.filter(m=>{const s=m.slot||mealSlotFromHour(new Date(m.time||0).getHours());return s==="breakfast"||s==="lunch";}).reduce((a,m)=>a+(m.total||0),0);const backloaded=dayProtein>0&&beforeDinner<dayProtein*0.4&&dayMeals.length>=2;return backloaded?<div style={{fontSize:11,color:C.redTx,marginTop:8,padding:"8px 10px",background:C.redBg,borderRadius:8,lineHeight:1.4}}>Only {Math.round((beforeDinner/dayProtein)*100)}% of protein before dinner. Front-load breakfast/lunch for better muscle retention on a cut.</div>:null;})()}
+        </div>
+      </div>}
+
       {dayMeals.length>0&&<div style={card}>
         <div style={cHead}><div style={{fontSize:15,fontWeight:700,color:C.txt}}>{foodDate===TD?"Today's":fmt(foodDate)+" "}meals</div><span style={pl(C.coralBg,C.coralTx)}>{dayMeals.length} logged</span></div>
-        {dayMeals.map((m,i)=><div key={m.id} style={{padding:"12px 16px",borderBottom:i<dayMeals.length-1?"1px solid "+C.bdr:"none"}}>
+        {dayMeals.map((m,i)=>{const curSlot=m.slot||mealSlotFromHour(new Date(m.time||0).getHours());const sc=SLOT_COLOR[curSlot];return <div key={m.id} style={{padding:"12px 16px",borderBottom:i<dayMeals.length-1?"1px solid "+C.bdr:"none"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
             <div style={{flex:1}}>
               <div style={{fontSize:13,color:C.txt,fontWeight:500,marginBottom:4}}>{m.input}</div>
-              {m.items&&m.items.length>1&&<div style={{fontSize:11,color:C.t2}}>{m.items.map(it=>it.name+" ("+it.protein+"g)").join(" · ")}</div>}
+              {m.items&&m.items.length>1&&<div style={{fontSize:11,color:C.t2,marginBottom:4}}>{m.items.map(it=>it.name+" ("+it.protein+"g)").join(" · ")}</div>}
+              <div style={{display:"flex",gap:4,marginTop:4}}>
+                {SLOT_ORDER.map(s=>{const sc2=SLOT_COLOR[s];const on=s===curSlot;return <button key={s} onClick={()=>setMealSlot(m.id,s)} style={{padding:"2px 8px",borderRadius:99,fontSize:9,fontWeight:600,cursor:"pointer",fontFamily:"inherit",border:on?"1.5px solid "+sc2.c:"1px solid "+C.bdr,background:on?sc2.bg:"transparent",color:on?sc2.tx:C.t3}}>{SLOT_LABEL[s]}</button>;})}
+              </div>
             </div>
             <div style={{textAlign:"right",flexShrink:0}}>
               <div style={{fontSize:16,fontWeight:700,color:C.coralTx}}>{m.total}g</div>
@@ -1001,7 +1128,7 @@ function HQ(){
               </div>
             </div>
           </div>
-        </div>)}
+        </div>;})}
       </div>}
 
       <div style={card}>
