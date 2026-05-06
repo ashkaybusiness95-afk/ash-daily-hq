@@ -186,17 +186,27 @@ function HQ(){
   const[showFoodMgr,setShowFoodMgr]=useState(false);
   const[newFoodN,setNewFoodN]=useState("");const[newFoodP,setNewFoodP]=useState("");
   const[aiFoodSugg,setAiFoodSugg]=useState("");const[aiFoodLoad,setAiFoodLoad]=useState(false);
+  const[expGoal,setExpGoal]=useState(null);
+  const[addStepGid,setAddStepGid]=useState(null);
+  const[stepF,setStepF]=useState({text:"",due:""});
+  const[expProj,setExpProj]=useState(null);
+  const[followupPid,setFollowupPid]=useState(null);
+  const[followupText,setFollowupText]=useState("");
   const fileRef=useRef(null);
   const[showSettings,setShowSettings]=useState(false);
+  // Chat A additions
+  const[parseTaskLoad,setParseTaskLoad]=useState(false);const[parseTaskErr,setParseTaskErr]=useState("");
+  const[showStackMgr,setShowStackMgr]=useState(false);const[newStackN,setNewStackN]=useState("");const[newStackItems,setNewStackItems]=useState([{name:"",protein:""}]);
+  const[showOwedAdd,setShowOwedAdd]=useState(false);const[owedF,setOwedF]=useState({who:"",amount:"",what:""});const[showOwedPaid,setShowOwedPaid]=useState(false);
 
-  const SEED={tasks:[],projects:[],goals:[],acts:{},actNotes:{},notes:{},body:[],meals:[],steps:{},reflections:{},foods:DEFAULT_FOODS,customActs:DEFAULT_ACTS.map(a=>a.name),plans:{},weeklyReviews:{},restDays:{}};
+  const SEED={tasks:[],projects:[],goals:[],acts:{},actNotes:{},notes:{},body:[],meals:[],steps:{},reflections:{},foods:DEFAULT_FOODS,customActs:DEFAULT_ACTS.map(a=>a.name),plans:{},weeklyReviews:{},restDays:{},mealStacks:[],owed:[]};
 
   useEffect(()=>{
     DOC.get().then(doc=>{
       let d=doc.exists?doc.data():null;
       if(!d){try{const b=localStorage.getItem(BK);if(b)d=JSON.parse(b);}catch{}}
       if(!d)d=JSON.parse(JSON.stringify(SEED));
-      ["tasks","projects","goals","body","meals"].forEach(k=>{if(!d[k])d[k]=[];});
+      ["tasks","projects","goals","body","meals","mealStacks","owed"].forEach(k=>{if(!d[k])d[k]=[];});
       ["acts","actNotes","notes","steps","reflections","plans","weeklyReviews","restDays"].forEach(k=>{if(!d[k])d[k]={};});
       if(!d.foods||!d.foods.length)d.foods=DEFAULT_FOODS;
       if(!d.customActs||!d.customActs.length)d.customActs=DEFAULT_ACTS.map(a=>a.name);
@@ -241,6 +251,13 @@ function HQ(){
       });
     }
 
+    // ONE-TIME MIGRATION: goals → projects (merge concept)
+    if(data.goals&&data.goals.length>0){
+      var SMAP={"In progress":"active","Almost done":"active","On hold":"on-hold","Done":"done"};
+      var migrated=data.goals.map(function(g){return{id:g.id||uid(),title:g.text,deadline:g.deadline||"",notes:"",status:SMAP[g.status]||"active",subtasks:(g.steps||[]).map(function(s){return{id:s.id||uid(),text:s.text,done:!!s.done,due:s.due||"",mustDoDate:null,doneDate:s.doneDate||null};}),created:g.created||TD};});
+      setData(function(p){return Object.assign({},p,{projects:(p.projects||[]).concat(migrated),goals:[]});});
+    }
+
     // Restore saved weekly review for current week
     if(data.weeklyReviews&&data.weeklyReviews[thisWeekStart]&&data.weeklyReviews[thisWeekStart].text)setWkAi(data.weeklyReviews[thisWeekStart].text);
   },[data]);
@@ -248,7 +265,7 @@ function HQ(){
   if(!data)return <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh"}}><div style={{color:C.t2}}>Loading...</div></div>;
 
   const upd=fn=>setData(p=>({...p,...fn(p)}));
-  const{tasks,projects,goals,acts,actNotes,notes,body,customActs,steps,reflections,foods,meals,plans,weeklyReviews,restDays}=data;
+  const{tasks,projects,goals,acts,actNotes,notes,body,customActs,steps,reflections,foods,meals,plans,weeklyReviews,restDays,mealStacks,owed}=data;
 
   // ─── ACTIVITY ───
   const actStyle=name=>{const d=DEFAULT_ACTS.find(a=>a.name===name);return d||{name,color:C.grn,bg:C.grnBg,tx:C.grnTx};};
@@ -323,6 +340,8 @@ function HQ(){
   const subAsTasks=[];
   projects.forEach(p=>{if(p.status==="done"||p.status==="on-hold")return;(p.subtasks||[]).forEach(st=>{if(!st.done)subAsTasks.push({...st,_pid:p.id,_pt:p.title,_isSub:true});});});
   const allToday=[...overdueTs,...todayTs,...subAsTasks];
+  const homeProjSubs=projects.filter(p=>p.status==="active").map(p=>{const n=(p.subtasks||[]).find(s=>!s.done);return n?{...n,_pid:p.id,_pt:p.title,_isSub:true,_d:(p.subtasks||[]).filter(s=>s.done).length,_t:(p.subtasks||[]).length}:null;}).filter(Boolean);
+  const homeUnified=[...overdueTs,...todayTs,...homeProjSubs];
 
   const doAddT=()=>{if(!tf.text.trim())return;upd(d=>({tasks:[{id:uid(),text:tf.text.trim(),cat:tf.cat,due:tf.due,pri:tf.pri,done:false,created:TD,recur:tf.recur||""},...d.tasks]}));setTf({text:"",cat:"property",due:TD,pri:"normal",recur:""});setAddT(false);};
   const tglDone=id=>{upd(d=>{
@@ -360,21 +379,81 @@ function HQ(){
   const addFood=()=>{if(!newFoodN.trim()||!newFoodP)return;upd(d=>({foods:[...(d.foods||[]),{name:newFoodN.trim(),protein:parseInt(newFoodP)||0}]}));setNewFoodN("");setNewFoodP("");};
   const delFood=i=>upd(d=>({foods:d.foods.filter((_,x)=>x!==i)}));
   const updFood=(i,patch)=>upd(d=>({foods:d.foods.map((f,x)=>x===i?{...f,...patch}:f)}));
-  const filtT=tasks.filter(t=>{if(vm==="today")return(t.due===TD||t.due<TD)&&!t.done;if(vm==="upcoming")return t.due>TD&&!t.done;if(vm==="overdue")return t.due<TD&&!t.done;if(vm==="done")return t.done;return true;}).filter(t=>flt==="all"||t.cat===flt);
+
+  // ─── MEAL STACKS (Chat A: S2) ───
+  const stackTotal=s=>(s.items||[]).reduce((a,it)=>a+(parseInt(it.protein)||0),0);
+  const addStack=()=>{
+    const valid=newStackItems.filter(it=>it.name.trim()&&it.protein);
+    if(!newStackN.trim()||valid.length===0){alert("Need a name + at least 1 item with protein");return;}
+    const items=valid.map(it=>({name:it.name.trim(),protein:parseInt(it.protein)||0}));
+    upd(d=>({mealStacks:[...(d.mealStacks||[]),{id:uid(),name:newStackN.trim(),items}]}));
+    setNewStackN("");setNewStackItems([{name:"",protein:""}]);
+  };
+  const delStack=id=>{if(!confirm("Delete this stack?"))return;upd(d=>({mealStacks:(d.mealStacks||[]).filter(s=>s.id!==id)}));};
+  const applyStack=(s)=>{const total=stackTotal(s);upd(d=>({meals:[{id:uid(),date:foodDate||TD,input:s.name,items:s.items,total,time:new Date().toISOString(),slot:mealSlotFromHour(now.getHours())},...(d.meals||[])]}));};
+
+  // ─── MONEY OWED (Chat A: bonus) ───
+  const owedOpen=(owed||[]).filter(o=>!o.paid);
+  const owedPaid=(owed||[]).filter(o=>o.paid);
+  const owedTotal=owedOpen.reduce((a,o)=>a+(parseFloat(o.amount)||0),0);
+  const addOwedRow=()=>{
+    if(!owedF.who.trim()||!owedF.amount){alert("Need who + amount");return;}
+    upd(d=>({owed:[{id:uid(),who:owedF.who.trim(),amount:parseFloat(owedF.amount)||0,what:owedF.what.trim(),dateAdded:TD,paid:false},...(d.owed||[])]}));
+    setOwedF({who:"",amount:"",what:""});setShowOwedAdd(false);
+  };
+  const togOwedPaid=id=>upd(d=>({owed:(d.owed||[]).map(o=>o.id===id?{...o,paid:!o.paid,datePaid:o.paid?null:TD}:o)}));
+  const delOwed=id=>{if(!confirm("Delete this entry?"))return;upd(d=>({owed:(d.owed||[]).filter(o=>o.id!==id)}));};
+
+  // ─── NL TASK PARSE (Chat A: A5) ───
+  const parseTaskAI=()=>{
+    if(!apiKey){setParseTaskErr("Add API key (⚙) first.");return;}
+    if(!tf.text.trim()){setParseTaskErr("Type something first.");return;}
+    setParseTaskLoad(true);setParseTaskErr("");
+    const today=TD;
+    callAI(apiKey,
+      "You parse natural-language task input into JSON. Today is "+today+". Return ONLY valid JSON: {\"text\":\"clean task description\",\"due\":\"YYYY-MM-DD\",\"cat\":\"property|fitness|personal|business\",\"pri\":\"normal|urgent\"}. Rules: (1) Strip date words from text — 'monday call broker' becomes text='call broker', due=next monday's date. (2) If no date given, use today ("+today+"). (3) Cat: property=HMOs/buy-to-lets/tenants/landlord, fitness=training/diet/protein/sleep, personal=family/admin/personal, business=photography/acting/side income. (4) Pri urgent only if 'urgent'/'asap'/'today'/'now' words appear. (5) Capitalise first letter of text. No markdown, only JSON.",
+      tf.text,
+      txt=>{
+        setParseTaskLoad(false);
+        try{
+          const clean=txt.replace(/```json|```/g,"").trim();
+          const obj=JSON.parse(clean);
+          if(!obj.text||!obj.due||!obj.cat)throw new Error("bad");
+          if(!["property","fitness","personal","business"].includes(obj.cat))obj.cat="personal";
+          setTf(f=>({...f,text:obj.text,due:obj.due,cat:obj.cat,pri:obj.pri==="urgent"?"urgent":"normal"}));
+        }catch(e){setParseTaskErr("Couldn't parse. Try clearer wording.");}
+      });
+  };
+
+  // Build a unified list including project subtasks + goal steps
+  const subtasksAsT=[];projects.forEach(p=>{if(p.status==="done"||p.status==="on-hold")return;let foundCur=false;(p.subtasks||[]).forEach(st=>{const isCur=!st.done&&!foundCur;if(isCur)foundCur=true;subtasksAsT.push({id:"st-"+st.id,_origId:st.id,_pid:p.id,_pt:p.title,_isSub:true,_isCurrent:isCur,text:st.text,due:st.due||"",done:!!st.done,cat:"projects",pri:"normal",mustDoDate:st.mustDoDate||null});});});
+  const goalStepsAsT=[];goals.forEach(g=>{(g.steps||[]).forEach(s=>{goalStepsAsT.push({id:"gs-"+s.id,_origId:s.id,_gid:g.id,_gt:g.text,_isGoalStep:true,text:s.text,due:s.due||"",done:!!s.done,cat:"goals",pri:"normal",mustDoDate:s.mustDoDate||null});});});
+  const allTasksUnified=[...tasks,...subtasksAsT,...goalStepsAsT];
+  const filtT=allTasksUnified.filter(t=>{if(vm==="today")return((t.due&&(t.due===TD||t.due<TD))||(!t.due&&t.mustDoDate===TD)||t._isCurrent)&&!t.done;if(vm==="upcoming")return t.due&&t.due>TD&&!t.done;if(vm==="overdue")return t.due&&t.due<TD&&!t.done;if(vm==="done")return t.done;return !t.done;}).filter(t=>flt==="all"||t.cat===flt);
 
   // ─── PROJECTS ───
   const doAddP=()=>{if(!pf.title.trim())return;upd(d=>({projects:[...d.projects,{id:uid(),title:pf.title.trim(),deadline:pf.deadline,notes:pf.notes,status:"active",subtasks:[],created:TD}]}));setPf({title:"",deadline:"",notes:""});setAddP(false);};
   const updP=(id,patch)=>upd(d=>({projects:d.projects.map(p=>p.id===id?{...p,...patch}:p)}));
   const delP=id=>upd(d=>({projects:d.projects.filter(p=>p.id!==id)}));
   const doAddSub=pid=>{if(!subF.text.trim())return;upd(d=>({projects:d.projects.map(p=>p.id===pid?{...p,subtasks:[...p.subtasks,{id:uid(),text:subF.text.trim(),due:subF.due||"",done:false}]}:p)}));setSubF({text:"",due:""});setAddSub(null);};
-  const tglSub=(pid,sid)=>upd(d=>({projects:d.projects.map(p=>p.id===pid?{...p,subtasks:p.subtasks.map(st=>st.id===sid?{...st,done:!st.done}:st)}:p)}));
+  const tglSub=(pid,sid)=>{
+    let wasCompleting=false;
+    upd(d=>({projects:d.projects.map(p=>{if(p.id!==pid)return p;return{...p,subtasks:p.subtasks.map(st=>{if(st.id!==sid)return st;if(!st.done)wasCompleting=true;return{...st,done:!st.done,doneDate:!st.done?TD:null};})};})}));
+    if(wasCompleting){setFollowupPid(pid);setFollowupText("");setTimeout(()=>{const el=document.getElementById("followup-"+pid);if(el)el.focus();},150);}
+  };
+  const addFollowup=pid=>{if(!followupText.trim())return;upd(d=>({projects:d.projects.map(p=>p.id===pid?{...p,subtasks:[...p.subtasks,{id:uid(),text:followupText.trim(),done:false,due:""}]}:p)}));setFollowupText("");setFollowupPid(null);};
+  const moveSub=(pid,sid,dir)=>upd(d=>({projects:d.projects.map(p=>{if(p.id!==pid)return p;const idx=p.subtasks.findIndex(s=>s.id===sid);if(idx<0)return p;const ni=idx+dir;if(ni<0||ni>=p.subtasks.length)return p;const arr=[...p.subtasks];[arr[idx],arr[ni]]=[arr[ni],arr[idx]];return{...p,subtasks:arr};})}));
   const delSub=(pid,sid)=>upd(d=>({projects:d.projects.map(p=>p.id===pid?{...p,subtasks:p.subtasks.filter(st=>st.id!==sid)}:p)}));
   const activeP=projects.filter(p=>p.status==="active");
 
   // ─── GOALS ───
-  const doAddG=()=>{if(!gf.text.trim())return;upd(d=>({goals:[...d.goals,{id:uid(),text:gf.text.trim(),deadline:gf.deadline,status:"In progress",created:TD}]}));setGf({text:"",deadline:""});setAddG(false);};
+  const doAddG=()=>{if(!gf.text.trim())return;upd(d=>({goals:[...d.goals,{id:uid(),text:gf.text.trim(),deadline:gf.deadline,status:"In progress",created:TD,steps:[]}]}));setGf({text:"",deadline:""});setAddG(false);};
   const updG=(id,patch)=>upd(d=>({goals:d.goals.map(g=>g.id===id?{...g,...patch}:g)}));
   const delG=id=>upd(d=>({goals:d.goals.filter(g=>g.id!==id)}));
+  // Goal steps
+  const addGoalStep=(gid,text,due)=>{if(!text.trim())return;upd(d=>({goals:d.goals.map(g=>g.id===gid?{...g,steps:[...(g.steps||[]),{id:uid(),text:text.trim(),done:false,due:due||""}]}:g)}));};
+  const tglGoalStep=(gid,sid)=>upd(d=>({goals:d.goals.map(g=>g.id===gid?{...g,steps:(g.steps||[]).map(s=>s.id===sid?{...s,done:!s.done,doneDate:!s.done?TD:null}:s)}:g)}));
+  const delGoalStep=(gid,sid)=>upd(d=>({goals:d.goals.map(g=>g.id===gid?{...g,steps:(g.steps||[]).filter(s=>s.id!==sid)}:g)}));
 
   // ─── BODY ───
   const doAddB=()=>{if(!bw)return;upd(d=>({body:[{id:uid(),weight:parseFloat(bw),waist:bwaist?parseFloat(bwaist):null,date:TD},...d.body]}));setBw("");setBwaist("");setAddB(false);};
@@ -546,6 +625,34 @@ function HQ(){
               <button onClick={addFood} style={btnP(C.coral)}>Add</button>
             </div>
           </div>}
+
+          {/* MEAL STACKS MGR */}
+          <div style={{fontSize:11,fontWeight:700,color:C.t2,textTransform:"uppercase",letterSpacing:0.8,margin:"18px 0 8px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span>Meal stacks ({(mealStacks||[]).length})</span>
+            <button onClick={()=>setShowStackMgr(s=>!s)} style={{background:"none",border:"none",cursor:"pointer",color:C.t2,fontSize:14,fontWeight:700,fontFamily:"inherit",padding:0}}>{showStackMgr?"−":"+"}</button>
+          </div>
+          {showStackMgr&&<div>
+            <div style={{fontSize:10,color:C.t3,marginBottom:10}}>Multi-item meals you log in one tap (e.g. "Usual breakfast" = oats + eggs + shake).</div>
+            {(mealStacks||[]).map(s=><div key={s.id} style={{padding:10,marginBottom:8,border:"1px solid "+C.bdr,borderRadius:8,background:C.vioBg+"40"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                <div style={{fontSize:13,fontWeight:700,color:C.vioTx}}>{s.name} <span style={{fontSize:11,color:C.t2,fontWeight:500,marginLeft:4}}>+{stackTotal(s)}g</span></div>
+                <button onClick={()=>delStack(s.id)} style={{width:24,height:24,borderRadius:6,border:"none",background:C.redBg,cursor:"pointer",color:C.redTx,display:"flex",alignItems:"center",justifyContent:"center"}}>{Ico.trash}</button>
+              </div>
+              <div style={{fontSize:11,color:C.t2}}>{s.items.map((it,j)=><span key={j}>{j>0?" · ":""}{it.name} ({it.protein}g)</span>)}</div>
+            </div>)}
+            <div style={{padding:10,border:"1px dashed "+C.bdr,borderRadius:8,marginTop:6}}>
+              <input value={newStackN} onChange={e=>setNewStackN(e.target.value)} placeholder='Stack name (e.g. "Usual breakfast")' style={{...inp,fontSize:13,marginBottom:8}}/>
+              {newStackItems.map((it,i)=><div key={i} style={{display:"flex",gap:6,marginBottom:6}}>
+                <input value={it.name} onChange={e=>{const n=[...newStackItems];n[i]={...n[i],name:e.target.value};setNewStackItems(n);}} placeholder="Item name" style={{...inp,flex:1,marginBottom:0,fontSize:12}}/>
+                <input type="number" value={it.protein} onChange={e=>{const n=[...newStackItems];n[i]={...n[i],protein:e.target.value};setNewStackItems(n);}} placeholder="g" style={{...inp,width:60,marginBottom:0,fontSize:12,textAlign:"right"}}/>
+                {newStackItems.length>1&&<button onClick={()=>setNewStackItems(newStackItems.filter((_,x)=>x!==i))} style={{width:30,borderRadius:6,border:"none",background:C.redBg,cursor:"pointer",color:C.redTx}}>×</button>}
+              </div>)}
+              <div style={{display:"flex",gap:6,marginTop:6}}>
+                <button onClick={()=>setNewStackItems([...newStackItems,{name:"",protein:""}])} style={{flex:1,padding:"6px 10px",borderRadius:8,border:"1px dashed "+C.bdr,background:"transparent",cursor:"pointer",fontSize:11,fontWeight:600,color:C.t2,fontFamily:"inherit"}}>+ Item</button>
+                <button onClick={addStack} style={btnP(C.vio)}>Save stack</button>
+              </div>
+            </div>
+          </div>}
         </div>
       </div>
     </div>}
@@ -606,6 +713,10 @@ function HQ(){
           <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:8}}>
             {customActs.map(name=>{const done=isA(name,TD);const st=actStyle(name);return <button key={name} onClick={()=>tgl(name,TD)} style={{padding:"6px 10px",borderRadius:99,fontFamily:"inherit",fontSize:11,fontWeight:600,cursor:"pointer",border:done?"none":"1px solid "+C.bdr,background:done?st.color:C.card,color:done?"#fff":C.t2,display:"flex",alignItems:"center",gap:4}}>{done?"✓ ":""}{name}</button>;})}
           </div>
+          {/* Stack chips row */}
+          {(mealStacks||[]).length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:8}}>
+            {mealStacks.map(s=><button key={s.id} onClick={()=>applyStack(s)} style={{padding:"5px 10px",borderRadius:99,fontFamily:"inherit",fontSize:10,fontWeight:600,cursor:"pointer",border:"1px solid "+C.vio+"40",background:C.vioBg,color:C.vioTx,display:"flex",alignItems:"center",gap:4}} title={s.items.map(it=>it.name+" "+it.protein+"g").join(", ")}>🍽 {s.name} <span style={{fontWeight:500,color:C.vioTx,opacity:0.8}}>+{stackTotal(s)}g</span></button>)}
+          </div>}
           {/* Protein row */}
           <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap"}}>
             <span style={{fontSize:11,color:C.coralTx,fontWeight:700,marginRight:2}}>{todayProtein}/{proteinTarget}g</span>
@@ -635,46 +746,83 @@ function HQ(){
       </div>}
 
       <div style={card}>
-        <div style={{padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:homeUnified.length>0?"1px solid "+C.bdr:"none"}}>
           <div>
             <div style={{fontSize:13,fontWeight:600,color:C.txt}}>Tasks</div>
-            <div style={{fontSize:11,color:C.t2,marginTop:1}}>{allToday.length} open{overdueC>0?" · "+overdueC+" overdue":""}{mustDoAll.length>0?" · "+mustDoAll.length+" pinned":""}</div>
+            <div style={{fontSize:11,color:C.t2,marginTop:1}}>{homeUnified.length} open{overdueC>0?" · "+overdueC+" overdue":""}{mustDoAll.length>0?" · "+mustDoAll.length+" pinned":""}</div>
           </div>
           <div style={{display:"flex",gap:6}}>
-            <button onClick={()=>{const list=mustDoAll.length>0?mustDoAll:allToday;if(list.length===0){alert("No tasks");return;}const text="Today's tasks:\n"+list.map((t,i)=>(i+1)+". "+t.text).join("\n");navigator.clipboard&&navigator.clipboard.writeText(text).then(()=>alert("Copied — paste into Google Keep for Gemini/Echo"),()=>alert(text));}} style={{padding:"8px 10px",borderRadius:10,border:"1px solid "+C.bdr,cursor:"pointer",background:"transparent",fontSize:11,fontWeight:600,color:C.t2,fontFamily:"inherit"}} title="Copy to clipboard — paste into Google Keep for Gemini to read">📋 Copy</button>
+            <button onClick={()=>{const list=mustDoAll.length>0?mustDoAll:homeUnified;if(list.length===0){alert("No tasks");return;}const text="Today's tasks:\n"+list.map((t,i)=>(i+1)+". "+t.text).join("\n");navigator.clipboard&&navigator.clipboard.writeText(text).then(()=>alert("Copied — paste into Google Keep for Gemini/Echo"),()=>alert(text));}} style={{padding:"8px 10px",borderRadius:10,border:"1px solid "+C.bdr,cursor:"pointer",background:"transparent",fontSize:11,fontWeight:600,color:C.t2,fontFamily:"inherit"}} title="Copy to clipboard — paste into Google Keep for Gemini to read">📋 Copy</button>
             <button onClick={()=>setTab("tasks")} style={{padding:"8px 14px",borderRadius:10,border:"1px solid "+C.bdr,cursor:"pointer",background:"transparent",fontSize:12,fontWeight:600,color:C.t2,fontFamily:"inherit"}}>View all</button>
             <button onClick={()=>{setTab("tasks");setAddT(true);}} style={btnP(C.grn)}>+ Add</button>
           </div>
         </div>
-        {allToday.length===0&&<div style={{padding:"4px 16px 16px",textAlign:"center"}}>
+        {homeUnified.length===0&&<div style={{padding:"16px",textAlign:"center"}}>
           <div style={{color:C.t3,fontSize:12}}>Nothing to do. Add a task from Tasks tab.</div>
         </div>}
-        {allToday.length>0&&mustDoAll.length===0&&<div style={{padding:"0 16px 12px",fontSize:11,color:C.amb,fontStyle:"italic"}}>No must-dos pinned. Star tasks from Tasks tab to focus.</div>}
-      </div>
+        {homeUnified.length>0&&mustDoAll.length===0&&<div style={{padding:"8px 16px 0",fontSize:11,color:C.amb,fontStyle:"italic"}}>No must-dos pinned. Star tasks to focus.</div>}
 
-      {activeP.length>0&&<div style={card}>
-        <div style={cHead}><div style={{fontSize:15,fontWeight:700,color:C.txt}}>Projects</div></div>
-        {activeP.map((p,i)=>{const d=p.subtasks.filter(s=>s.done).length,t=p.subtasks.length,pct=t>0?Math.round((d/t)*100):0;
-          return <div key={p.id} style={{padding:"12px 16px",borderBottom:i<activeP.length-1?"1px solid "+C.bdr:"none"}}>
-            <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
-              <div style={{fontSize:13,fontWeight:600,color:C.txt}}>{p.title}</div>
-              <span style={{fontSize:12,fontWeight:600,color:pct===100?C.grn:C.vio}}>{pct}%</span>
+        {/* UNIFIED TASK LIST — regular tasks + project next steps together */}
+        {homeUnified.map((t,i)=>{const isSub=!!t._isSub;const c=isSub?{c:C.vio,tx:C.vioTx,bg:C.vioBg,label:"Project"}:gc(t.cat);const od=t.due&&t.due<TD&&!t.done;const pinned=t.mustDoDate===TD;
+          return <div key={t.id+(isSub?"s":"")} style={{padding:"10px 14px",display:"flex",gap:10,alignItems:"center",borderTop:i===0?"none":"1px solid "+C.bdr,borderLeft:isSub?"3px solid "+C.vio:"none"}}>
+            <button onClick={()=>{if(isSub)tglSub(t._pid,t.id);else tglDone(t.id);}} style={{width:22,height:22,borderRadius:7,flexShrink:0,border:"2px solid "+(od?C.red:c.c),background:"transparent",cursor:"pointer"}} title="Mark complete"/>
+            <div onClick={isSub?()=>setTab("proj"):undefined} style={{flex:1,minWidth:0,cursor:isSub?"pointer":"default"}}>
+              <div style={{fontSize:13,fontWeight:600,color:C.txt}}>{t.text}</div>
+              <div style={{fontSize:10,color:C.t2,marginTop:3,display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                {isSub?<><span style={{color:C.vioTx,fontWeight:600}}>{t._pt}</span><span>· {t._d}/{t._t}</span></>:<span style={pl(c.bg,c.tx)}>{c.label}</span>}
+                {od&&<span style={{fontSize:11,fontWeight:600,color:C.red}}>Overdue</span>}
+                {t.due&&t.due!==TD&&!od&&<span style={{color:C.t3}}>{fmt(t.due)}</span>}
+              </div>
             </div>
-            <div style={{background:C.bdr,borderRadius:99,height:6,overflow:"hidden"}}>
-              <div style={{height:"100%",borderRadius:99,background:pct===100?C.grn:C.vio,width:pct+"%",transition:"width 0.3s"}}/>
-            </div>
+            <button onClick={()=>{if(isSub)togglePinSub(t._pid,t.id,TD);else togglePin(t.id);}} style={{width:24,height:24,borderRadius:6,border:"none",background:pinned?C.amb:"transparent",cursor:"pointer",color:pinned?"#fff":C.t3,fontSize:14,fontFamily:"inherit",flexShrink:0}} title="Pin must-do today">★</button>
           </div>;
         })}
-      </div>}
+      </div>
 
-      {goals.filter(g=>g.status!=="Done").length>0&&<div style={card}>
-        <div style={{padding:"14px 16px"}}><div style={{fontSize:15,fontWeight:700,color:C.txt,marginBottom:8}}>Goals</div>
-        {goals.filter(g=>g.status!=="Done").map(g=>{const sm={"In progress":{bg:C.vioBg,c:C.vioTx},"Almost done":{bg:C.grnBg,c:C.grnTx},"On hold":{bg:C.ambBg,c:C.ambTx}};const sc=sm[g.status]||sm["In progress"];
-          return <div key={g.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}>
-            <span style={{fontSize:13,fontWeight:500,color:C.txt}}>{g.text}</span><span style={pl(sc.bg,sc.c)}>{g.status}</span>
-          </div>;
-        })}</div>
-      </div>}
+      {/* ═══ MONEY OWED ═══ */}
+      <div style={{...card,marginTop:12}}>
+        <div style={{padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:owedOpen.length>0?"1px solid "+C.bdr:"none"}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:600,color:C.txt}}>Money owed</div>
+            <div style={{fontSize:11,color:C.t2,marginTop:1}}>{owedOpen.length===0?"Nothing outstanding":<><span style={{fontWeight:700,color:C.grnTx}}>£{owedTotal.toFixed(2)}</span> across {owedOpen.length} {owedOpen.length===1?"entry":"entries"}</>}</div>
+          </div>
+          <div style={{display:"flex",gap:6}}>
+            {owedPaid.length>0&&<button onClick={()=>setShowOwedPaid(s=>!s)} style={{padding:"8px 10px",borderRadius:10,border:"1px solid "+C.bdr,cursor:"pointer",background:"transparent",fontSize:11,fontWeight:600,color:C.t2,fontFamily:"inherit"}}>{showOwedPaid?"Hide":"Paid ("+owedPaid.length+")"}</button>}
+            <button onClick={()=>setShowOwedAdd(s=>!s)} style={btnP(C.grn)}>{showOwedAdd?"×":"+ Add"}</button>
+          </div>
+        </div>
+        {showOwedAdd&&<div style={{padding:"12px 16px",borderBottom:"1px solid "+C.bdr,background:"#fafaf7"}}>
+          <input value={owedF.who} onChange={e=>setOwedF(f=>({...f,who:e.target.value}))} placeholder="Who owes you (e.g. Plusnet, Hollyoaks)" style={{...inp,fontSize:13}} autoFocus/>
+          <div style={{display:"flex",gap:8,marginBottom:8}}>
+            <span style={{padding:"10px 0 10px 12px",fontSize:14,color:C.t2}}>£</span>
+            <input type="number" value={owedF.amount} onChange={e=>setOwedF(f=>({...f,amount:e.target.value}))} placeholder="120.00" step="0.01" style={{...inp,fontSize:13,marginBottom:0,flex:1}}/>
+          </div>
+          <input value={owedF.what} onChange={e=>setOwedF(f=>({...f,what:e.target.value}))} onKeyDown={e=>e.key==="Enter"&&addOwedRow()} placeholder="What for? (optional, e.g. acting day, refund)" style={{...inp,fontSize:13,marginTop:8}}/>
+          <button onClick={addOwedRow} style={{...btnP(C.grn),width:"100%",padding:10,fontSize:13}}>Save</button>
+        </div>}
+        {owedOpen.length===0&&!showOwedAdd&&<div style={{padding:"16px",textAlign:"center"}}>
+          <div style={{color:C.t3,fontSize:12}}>Nothing outstanding. Add chases for refunds, acting work, etc.</div>
+        </div>}
+        {owedOpen.map((o,i)=>{const days=Math.floor((new Date(TD)-new Date(o.dateAdded))/86400000);const stale=days>=30;return <div key={o.id} style={{padding:"10px 14px",display:"flex",gap:10,alignItems:"center",borderTop:i===0?"none":"1px solid "+C.bdr}}>
+          <button onClick={()=>togOwedPaid(o.id)} style={{width:22,height:22,borderRadius:7,flexShrink:0,border:"2px solid "+C.grn,background:"transparent",cursor:"pointer"}} title="Mark paid"/>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:13,fontWeight:600,color:C.txt}}>{o.who} <span style={{color:C.grnTx,marginLeft:4}}>£{(parseFloat(o.amount)||0).toFixed(2)}</span></div>
+            <div style={{fontSize:10,color:C.t2,marginTop:2,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+              {o.what&&<span>{o.what}</span>}
+              <span style={{color:stale?C.red:C.t3}}>{days===0?"today":days===1?"1 day ago":days+" days ago"}{stale?" · stale":""}</span>
+            </div>
+          </div>
+          <button onClick={()=>delOwed(o.id)} style={{width:26,height:26,borderRadius:8,border:"none",background:C.redBg,cursor:"pointer",color:C.redTx,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{Ico.trash}</button>
+        </div>;})}
+        {showOwedPaid&&owedPaid.map((o,i)=><div key={o.id} style={{padding:"8px 14px",display:"flex",gap:10,alignItems:"center",borderTop:"1px solid "+C.bdr,background:"#fafaf7",opacity:0.7}}>
+          <button onClick={()=>togOwedPaid(o.id)} style={{width:22,height:22,borderRadius:7,flexShrink:0,border:"none",background:C.grn,cursor:"pointer",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center"}}>{Ico.check}</button>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:12,color:C.t2,textDecoration:"line-through"}}>{o.who} · £{(parseFloat(o.amount)||0).toFixed(2)}{o.what?" · "+o.what:""}</div>
+            <div style={{fontSize:10,color:C.t3,marginTop:1}}>Paid {o.datePaid?fmt(o.datePaid):""}</div>
+          </div>
+          <button onClick={()=>delOwed(o.id)} style={{width:26,height:26,borderRadius:8,border:"none",background:C.redBg,cursor:"pointer",color:C.redTx,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{Ico.trash}</button>
+        </div>)}
+      </div>
     </div>}
 
     {/* ══════ TASKS ══════ */}
@@ -692,9 +840,9 @@ function HQ(){
         <div style={{color:C.t3,fontSize:13}}>No tasks here</div>
       </div>}
 
-      {filtT.map(t=>{const c=gc(t.cat);const od=t.due<TD&&!t.done;
-        return <div key={t.id} style={{...card,marginBottom:6}}>
-          {editId===t.id?<div style={{padding:14}}>
+      {filtT.map(t=>{const isSub=!!t._isSub;const isGS=!!t._isGoalStep;const isLinked=isSub||isGS;const c=isSub?{bg:C.vioBg,tx:C.vioTx,c:C.vio,label:"Project"}:isGS?{bg:C.ambBg,tx:C.ambTx,c:C.amb,label:"Goal"}:gc(t.cat);const od=t.due&&t.due<TD&&!t.done;
+        return <div key={t.id} style={{...card,marginBottom:6,borderLeft:isLinked?"3px solid "+c.c:"none"}}>
+          {editId===t.id&&!isLinked?<div style={{padding:14}}>
             <input value={editF.text||""} onChange={e=>setEditF(f=>({...f,text:e.target.value}))} style={inp} autoFocus/>
             <input type="date" value={editF.due||""} onChange={e=>setEditF(f=>({...f,due:e.target.value}))} style={inp}/>
             <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
@@ -705,22 +853,24 @@ function HQ(){
               <button onClick={()=>setEditId(null)} style={{padding:"10px 16px",borderRadius:10,border:"1px solid "+C.bdr,cursor:"pointer",background:"transparent",color:C.t2,fontSize:13}}>Cancel</button>
             </div>
           </div>:<div style={{padding:"10px 14px",display:"flex",gap:10,alignItems:"center"}}>
-            <button onClick={()=>tglDone(t.id)} style={{width:22,height:22,borderRadius:7,flexShrink:0,border:t.done?"none":"2px solid "+(od?C.red:c.c),background:t.done?C.grn:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff"}}>{t.done&&Ico.check}</button>
+            <button onClick={()=>{if(isSub)tglSub(t._pid,t._origId);else if(isGS)tglGoalStep(t._gid,t._origId);else tglDone(t.id);}} style={{width:22,height:22,borderRadius:7,flexShrink:0,border:t.done?"none":"2px solid "+(od?C.red:c.c),background:t.done?C.grn:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff"}}>{t.done&&Ico.check}</button>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:13,fontWeight:500,color:C.txt,textDecoration:t.done?"line-through":"none",opacity:t.done?0.5:1}}>{t.text}</div>
               <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap"}}>
                 <span style={pl(c.bg,c.tx)}>{c.label}</span>
+                {(isSub||isGS)&&<span style={{fontSize:10,color:c.tx,fontWeight:500}}>· {isSub?t._pt:t._gt}</span>}
                 {t.pri==="urgent"&&<span style={pl(C.redBg,C.redTx)}>Urgent</span>}
-                {t.recur&&<span style={pl(C.bluBg,C.bluTx)}>{t.recur}</span>}
+                {t.recur&&!isLinked&&<span style={pl(C.bluBg,C.bluTx)}>{t.recur}</span>}
                 {od&&<span style={{fontSize:11,fontWeight:600,color:C.red}}>Overdue</span>}
                 {t.due!==TD&&!od&&<span style={{fontSize:11,color:C.t3}}>{fmt(t.due)}</span>}
               </div>
             </div>
             <div style={{display:"flex",gap:4,flexShrink:0}}>
-              <button onClick={()=>togglePin(t.id)} style={{width:26,height:26,borderRadius:8,border:"none",background:t.mustDoDate===TD?C.amb:C.bdr,cursor:"pointer",color:t.mustDoDate===TD?"#fff":C.t2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}} title="Must-do today">★</button>
-              <a href={calUrl(t.text,t.due)} target="_blank" rel="noopener" style={{width:26,height:26,borderRadius:8,background:C.grnBg,color:C.grn,display:"flex",alignItems:"center",justifyContent:"center"}}>{Ico.cal}</a>
-              <button onClick={()=>{setEditId(t.id);setEditF({text:t.text,cat:t.cat,due:t.due,pri:t.pri,recur:t.recur||""});}} style={{width:26,height:26,borderRadius:8,border:"none",background:C.bdr,cursor:"pointer",color:C.t2,display:"flex",alignItems:"center",justifyContent:"center"}}>{Ico.edit}</button>
-              <button onClick={()=>delT(t.id)} style={{width:26,height:26,borderRadius:8,border:"none",background:C.redBg,cursor:"pointer",color:C.redTx,display:"flex",alignItems:"center",justifyContent:"center"}}>{Ico.trash}</button>
+              {!isLinked&&<button onClick={()=>togglePin(t.id)} style={{width:26,height:26,borderRadius:8,border:"none",background:t.mustDoDate===TD?C.amb:C.bdr,cursor:"pointer",color:t.mustDoDate===TD?"#fff":C.t2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}} title="Must-do today">★</button>}
+              {!isLinked&&<a href={calUrl(t.text,t.due)} target="_blank" rel="noopener" style={{width:26,height:26,borderRadius:8,background:C.grnBg,color:C.grn,display:"flex",alignItems:"center",justifyContent:"center"}}>{Ico.cal}</a>}
+              {!isLinked&&<button onClick={()=>{setEditId(t.id);setEditF({text:t.text,cat:t.cat,due:t.due,pri:t.pri,recur:t.recur||""});}} style={{width:26,height:26,borderRadius:8,border:"none",background:C.bdr,cursor:"pointer",color:C.t2,display:"flex",alignItems:"center",justifyContent:"center"}}>{Ico.edit}</button>}
+              {isLinked&&<button onClick={()=>setTab("proj")} style={{padding:"4px 10px",borderRadius:8,border:"1px solid "+c.c+"40",background:c.bg,cursor:"pointer",color:c.tx,fontSize:10,fontWeight:600,fontFamily:"inherit"}}>Open</button>}
+              {!isLinked&&<button onClick={()=>delT(t.id)} style={{width:26,height:26,borderRadius:8,border:"none",background:C.redBg,cursor:"pointer",color:C.redTx,display:"flex",alignItems:"center",justifyContent:"center"}}>{Ico.trash}</button>}
             </div>
           </div>}
         </div>;
@@ -733,7 +883,11 @@ function HQ(){
       {tmpl&&<div style={{...card,padding:14,marginTop:8}}><div style={{display:"flex",flexWrap:"wrap",gap:6}}>{TMPLS.map((t,i)=><button key={i} onClick={()=>{upd(d=>({tasks:[{id:uid(),text:t,cat:"property",due:TD,pri:"normal",done:false,created:TD,recur:""},...d.tasks]}));setTmpl(false);}} style={{padding:"5px 10px",borderRadius:99,border:"1px solid "+C.grn+"40",background:C.grnBg,color:C.grnTx,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>+ {t}</button>)}</div></div>}
 
       {addT&&<div style={{...card,padding:14,marginTop:8}} className="fade-in">
-        <input value={tf.text} onChange={e=>setTf(f=>({...f,text:e.target.value}))} onKeyDown={e=>e.key==="Enter"&&doAddT()} placeholder="What needs doing?" style={{...inp,fontSize:14}} autoFocus/>
+        <div style={{display:"flex",gap:6,marginBottom:8}}>
+          <input value={tf.text} onChange={e=>setTf(f=>({...f,text:e.target.value}))} onKeyDown={e=>e.key==="Enter"&&doAddT()} placeholder='What needs doing? e.g. "monday call broker about hmo3"' style={{...inp,fontSize:14,marginBottom:0,flex:1}} autoFocus/>
+          <button onClick={parseTaskAI} disabled={parseTaskLoad||!tf.text.trim()} style={{padding:"10px 12px",borderRadius:10,border:"1px solid "+C.bdr,cursor:parseTaskLoad||!tf.text.trim()?"default":"pointer",background:parseTaskLoad?C.bdr:C.vioBg,color:parseTaskLoad?C.t3:C.vioTx,fontSize:13,fontWeight:600,fontFamily:"inherit",whiteSpace:"nowrap"}} title="AI parses date + category from your text">{parseTaskLoad?"…":"🤖 Parse"}</button>
+        </div>
+        {parseTaskErr&&<div style={{fontSize:11,color:C.red,marginBottom:8}}>{parseTaskErr}</div>}
         <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
           {CATS.map(c=><button key={c.key} onClick={()=>setTf(f=>({...f,cat:c.key}))} style={{padding:"5px 10px",borderRadius:99,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",border:tf.cat===c.key?"2px solid "+c.c:"1px solid "+C.bdr,background:tf.cat===c.key?c.bg:"transparent",color:tf.cat===c.key?c.c:C.t2}}>{c.label}</button>)}
         </div>
@@ -753,12 +907,15 @@ function HQ(){
 
     {/* ══════ PROJECTS & GOALS ══════ */}
     {tab==="proj"&&<div className="fade-in">
-      <div style={{fontSize:16,fontWeight:700,color:C.txt,marginBottom:10}}>Projects</div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:10}}>
+        <div style={{fontSize:16,fontWeight:700,color:C.txt}}>Projects & Goals</div>
+        <div style={{fontSize:11,color:C.t2}}>{projects.filter(p=>p.status!=="done").length} active</div>
+      </div>
       {projects.length===0&&<div style={{...card,padding:"32px 16px",textAlign:"center",marginBottom:12}}>
-        <div style={{color:C.t3,fontSize:13}}>No projects yet. Add one below.</div>
+        <div style={{color:C.t3,fontSize:13}}>Nothing yet. Add a project, goal, or anything you're working towards.</div>
       </div>}
-      {projects.map(p=>{const d=p.subtasks.filter(s=>s.done).length,t=p.subtasks.length,pct=t>0?Math.round((d/t)*100):0;
-        return <div key={p.id} style={{...card,opacity:p.status==="done"?0.5:1}}>
+      {projects.map(p=>{const subs=p.subtasks||[];const d=subs.filter(s=>s.done).length;const t=subs.length;const pct=t>0?Math.round((d/t)*100):0;const currentSub=subs.find(s=>!s.done);const isExp=expProj===p.id;const accent=p.status==="done"?C.amb:pct>0?C.grn:C.vio;
+        return <div key={p.id} style={{...card,opacity:p.status==="on-hold"?0.55:1,borderLeft:"3px solid "+accent}}>
           {editPid===p.id?<div style={{padding:14}}>
             <input value={editPf.title||""} onChange={e=>setEditPf(f=>({...f,title:e.target.value}))} style={inp}/>
             <input type="date" value={editPf.deadline||""} onChange={e=>setEditPf(f=>({...f,deadline:e.target.value}))} style={inp}/>
@@ -767,75 +924,110 @@ function HQ(){
               <button onClick={()=>{updP(p.id,editPf);setEditPid(null);}} style={{...btnP(C.grn),flex:1,padding:10}}>Save</button>
               <button onClick={()=>setEditPid(null)} style={{padding:"10px 16px",borderRadius:10,border:"1px solid "+C.bdr,cursor:"pointer",background:"transparent",color:C.t2,fontSize:13}}>Cancel</button>
             </div>
-          </div>:<>
-            <div style={{padding:"12px 16px",borderBottom:"1px solid "+C.bdr}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:15,fontWeight:700,color:C.txt}}>{p.title}</div>
-                  {p.deadline&&<div style={{fontSize:11,color:C.t2,marginTop:2}}>Due {fmt(p.deadline)}</div>}
-                  {p.notes&&<div style={{fontSize:12,color:C.t2,marginTop:2}}>{p.notes}</div>}
-                </div>
-                <div style={{display:"flex",gap:4}}>
-                  <select value={p.status} onChange={e=>updP(p.id,{status:e.target.value})} style={{padding:"4px 8px",borderRadius:8,border:"1px solid "+C.bdr,background:C.card,color:C.txt,fontSize:11,fontWeight:600,outline:"none"}}><option value="active">Active</option><option value="on-hold">On hold</option><option value="done">Done</option></select>
-                  <button onClick={()=>{setEditPid(p.id);setEditPf({title:p.title,deadline:p.deadline,notes:p.notes});}} style={{width:26,height:26,borderRadius:8,border:"none",background:C.bdr,cursor:"pointer",color:C.t2,display:"flex",alignItems:"center",justifyContent:"center"}}>{Ico.edit}</button>
-                  <button onClick={()=>delP(p.id)} style={{width:26,height:26,borderRadius:8,border:"none",background:C.redBg,cursor:"pointer",color:C.redTx,display:"flex",alignItems:"center",justifyContent:"center"}}>{Ico.trash}</button>
-                </div>
-              </div>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <div style={{flex:1,background:C.bdr,borderRadius:99,height:7,overflow:"hidden"}}><div style={{height:"100%",borderRadius:99,background:pct===100?C.grn:C.vio,width:pct+"%",transition:"width 0.3s"}}/></div>
-                <span style={{fontSize:12,fontWeight:600,color:pct===100?C.grn:C.vio}}>{pct}%</span>
+          </div>:<div style={{padding:"14px 16px"}}>
+            {/* HEADER */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,marginBottom:t>0?12:0}}>
+              <button onClick={()=>setExpProj(isExp?null:p.id)} style={{flex:1,minWidth:0,background:"none",border:"none",cursor:t>0?"pointer":"default",padding:0,textAlign:"left",fontFamily:"inherit",display:"flex",gap:8,alignItems:"flex-start"}}>
+                {t>0&&<span style={{fontSize:14,color:C.t3,marginTop:3,transition:"transform .2s",display:"inline-block",transform:isExp?"rotate(90deg)":"rotate(0deg)"}}>›</span>}
+                <span style={{flex:1,minWidth:0}}>
+                  <span style={{display:"block",fontSize:15,fontWeight:700,color:C.txt,fontFamily:"'Playfair Display',serif",lineHeight:1.2,textDecoration:p.status==="done"?"line-through":"none"}}>{p.title}</span>
+                  <span style={{display:"flex",gap:8,marginTop:4,fontSize:11,color:C.t2,flexWrap:"wrap"}}>
+                    {p.deadline&&<span>Due {fmt(p.deadline)}</span>}
+                    {t>0&&<span style={{color:pct===100?C.amb:C.grn,fontWeight:600}}>{d}/{t} steps · {pct}%</span>}
+                    {p.notes&&<span style={{fontStyle:"italic",color:C.t3}}>{p.notes}</span>}
+                  </span>
+                </span>
+              </button>
+              <div style={{display:"flex",gap:4,flexShrink:0}}>
+                <select value={p.status} onChange={e=>updP(p.id,{status:e.target.value})} style={{padding:"4px 8px",borderRadius:8,border:"1px solid "+C.bdr,background:C.card,color:C.txt,fontSize:11,fontWeight:600,outline:"none"}}><option value="active">Active</option><option value="on-hold">On hold</option><option value="done">Done</option></select>
+                <button onClick={()=>{setEditPid(p.id);setEditPf({title:p.title,deadline:p.deadline,notes:p.notes});}} style={{width:26,height:26,borderRadius:8,border:"none",background:C.bdr,cursor:"pointer",color:C.t2,display:"flex",alignItems:"center",justifyContent:"center"}}>{Ico.edit}</button>
+                <button onClick={()=>{if(confirm("Delete '"+p.title+"' and all its steps?"))delP(p.id);}} style={{width:26,height:26,borderRadius:8,border:"none",background:C.redBg,cursor:"pointer",color:C.redTx,display:"flex",alignItems:"center",justifyContent:"center"}}>{Ico.trash}</button>
               </div>
             </div>
-            <div style={{padding:"4px 0"}}>
-              {p.subtasks.map(st=><div key={st.id} style={{padding:"8px 16px",display:"flex",gap:10,alignItems:"center"}}>
-                <button onClick={()=>tglSub(p.id,st.id)} style={{width:20,height:20,borderRadius:6,flexShrink:0,border:st.done?"none":"2px solid "+C.vio,background:st.done?C.grn:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff"}}>{st.done&&Ico.check}</button>
-                <div style={{flex:1,fontSize:13,color:C.txt,textDecoration:st.done?"line-through":"none"}}>{st.text}</div>
-                {st.due&&<span style={{fontSize:10,color:C.t3}}>{fmt(st.due)}</span>}
-                {!st.done&&<button onClick={()=>togglePinSub(p.id,st.id,TD)} style={{width:22,height:22,borderRadius:6,border:"none",background:st.mustDoDate===TD?C.amb:"transparent",cursor:"pointer",color:st.mustDoDate===TD?"#fff":C.t3,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}} title="Must-do today">★</button>}
-                <button onClick={()=>delSub(p.id,st.id)} style={{width:20,height:20,borderRadius:6,border:"none",background:C.redBg,cursor:"pointer",color:C.redTx,display:"flex",alignItems:"center",justifyContent:"center"}}>{Ico.trash}</button>
-              </div>)}
-              {addSub===p.id?<div style={{padding:"8px 16px",display:"flex",gap:6,flexWrap:"wrap"}}>
-                <input value={subF.text} onChange={e=>setSubF(f=>({...f,text:e.target.value}))} onKeyDown={e=>e.key==="Enter"&&doAddSub(p.id)} placeholder="Subtask..." style={{...inp,flex:1,marginBottom:0,minWidth:120}} autoFocus/>
-                <input type="date" value={subF.due} onChange={e=>setSubF(f=>({...f,due:e.target.value}))} style={{...inp,width:130,marginBottom:0}}/>
-                <button onClick={()=>doAddSub(p.id)} style={btnP(C.vio)}>Add</button>
+
+            {/* DOT STEPPER */}
+            {t>0&&<div style={{display:"flex",alignItems:"center",gap:0,marginBottom:10,padding:"4px 0"}}>
+              {subs.map((s,i)=>{const isCurrent=!s.done&&!subs.slice(0,i).some(x=>!x.done);return <React.Fragment key={s.id}>
+                <button onClick={()=>tglSub(p.id,s.id)} style={{
+                  width:isCurrent?22:14,height:isCurrent?22:14,borderRadius:"50%",
+                  border:s.done?"none":isCurrent?"2px solid "+C.amb:"2px solid "+C.bdr,
+                  background:s.done?C.amb:isCurrent?"#fff":"transparent",
+                  cursor:"pointer",flexShrink:0,padding:0,fontSize:9,color:"#fff",fontWeight:700,
+                  display:"flex",alignItems:"center",justifyContent:"center",
+                  boxShadow:isCurrent?"0 0 0 4px "+C.amb+"20":"none",transition:"all .2s"
+                }} title={s.text}>{s.done?"✓":""}</button>
+                {i<subs.length-1&&<div style={{flex:1,height:2,background:s.done?C.amb:C.bdr,minWidth:6,maxWidth:36,transition:"background .2s"}}/>}
+              </React.Fragment>;})}
+            </div>}
+
+            {/* CURRENT STEP CALLOUT */}
+            {currentSub&&!isExp&&followupPid!==p.id&&<div style={{padding:"10px 12px",background:C.ambBg,borderRadius:10,border:"1px solid "+C.amb+"30"}}>
+              <div style={{fontSize:9,fontWeight:700,color:C.ambTx,textTransform:"uppercase",letterSpacing:0.6,marginBottom:3}}>Next step · {d+1} of {t}</div>
+              <div style={{fontSize:13,fontWeight:600,color:C.txt,marginBottom:8}}>{currentSub.text}</div>
+              {currentSub.due&&<div style={{fontSize:11,color:C.ambTx,marginBottom:8}}>Due {fmt(currentSub.due)}</div>}
+              <div style={{display:"flex",gap:6}}>
+                <button onClick={()=>tglSub(p.id,currentSub.id)} style={{...btnP(C.amb),fontSize:12,padding:"7px 12px",flex:1}}>Mark complete</button>
+                <button onClick={()=>togglePinSub(p.id,currentSub.id,TD)} style={{padding:"7px 10px",borderRadius:8,border:"1px solid "+(currentSub.mustDoDate===TD?C.amb:C.amb+"40"),cursor:"pointer",background:currentSub.mustDoDate===TD?C.amb:"transparent",fontSize:14,color:currentSub.mustDoDate===TD?"#fff":C.ambTx,fontFamily:"inherit"}}>★</button>
+                <button onClick={()=>setExpProj(p.id)} style={{padding:"7px 12px",borderRadius:8,border:"1px solid "+C.amb+"40",cursor:"pointer",background:"transparent",fontSize:12,color:C.ambTx,fontFamily:"inherit",fontWeight:600}}>All</button>
+              </div>
+            </div>}
+
+            {/* FOLLOW-UP PROMPT — appears right after marking a step done */}
+            {followupPid===p.id&&<div style={{padding:"12px",background:C.grnBg,borderRadius:10,border:"1px solid "+C.grn+"40"}}>
+              <div style={{fontSize:9,fontWeight:700,color:C.grnTx,textTransform:"uppercase",letterSpacing:0.6,marginBottom:6}}>Step done. What's next?</div>
+              <div style={{display:"flex",gap:6}}>
+                <input id={"followup-"+p.id} value={followupText} onChange={e=>setFollowupText(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")addFollowup(p.id);if(e.key==="Escape"){setFollowupPid(null);setFollowupText("");}}} placeholder="Next step (or skip)" style={{...inp,flex:1,marginBottom:0,fontSize:13,background:"#fff"}}/>
+                <button onClick={()=>addFollowup(p.id)} style={btnP(C.grn)}>Add</button>
+                <button onClick={()=>{setFollowupPid(null);setFollowupText("");}} style={{padding:"10px 12px",borderRadius:8,border:"1px solid "+C.bdr,cursor:"pointer",background:"transparent",color:C.t2,fontSize:12,fontFamily:"inherit"}}>Skip</button>
+              </div>
+            </div>}
+
+            {pct===100&&t>0&&followupPid!==p.id&&<div style={{padding:"12px",background:C.grnBg,borderRadius:10,textAlign:"center"}}>
+              <div style={{fontSize:11,fontWeight:700,color:C.grnTx,letterSpacing:1,textTransform:"uppercase",marginBottom:2}}>All steps cleared</div>
+              <div style={{fontSize:12,color:C.grnTx}}>Mark "Done" above to lock it in.</div>
+            </div>}
+
+            {t===0&&<button onClick={()=>{setExpProj(p.id);setAddSub(p.id);setSubF({text:"",due:""});}} style={{width:"100%",padding:10,borderRadius:10,border:"1.5px dashed "+C.bdr,cursor:"pointer",background:"transparent",fontSize:12,fontWeight:600,color:C.t2,fontFamily:"inherit"}}>+ Break this down into steps</button>}
+
+            {/* EXPANDED LIST */}
+            {isExp&&<div style={{marginTop:12,paddingTop:12,borderTop:"1px solid "+C.bdr}}>
+              <div style={{fontSize:11,fontWeight:700,color:C.t2,letterSpacing:0.6,textTransform:"uppercase",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span>All steps · drag-free reorder with arrows</span>
+                <button onClick={()=>setExpProj(null)} style={{padding:"4px 10px",borderRadius:6,border:"1px solid "+C.bdr,cursor:"pointer",fontFamily:"inherit",fontSize:10,color:C.t2,fontWeight:600,background:C.card}}>↑ Collapse</button>
+              </div>
+              {subs.map((s,i)=>{const isCur=!s.done&&!subs.slice(0,i).some(x=>!x.done);return <div key={s.id} style={{display:"flex",gap:6,alignItems:"center",padding:"8px 0",borderBottom:i<subs.length-1?"1px solid "+C.bdr:"none"}}>
+                <div style={{display:"flex",flexDirection:"column",gap:1}}>
+                  <button onClick={()=>moveSub(p.id,s.id,-1)} disabled={i===0} style={{width:18,height:14,borderRadius:4,border:"none",background:i===0?"transparent":C.bdr,cursor:i===0?"default":"pointer",color:i===0?C.t3:C.t2,fontSize:9,padding:0,fontFamily:"inherit",lineHeight:1,opacity:i===0?0.3:1}}>▲</button>
+                  <button onClick={()=>moveSub(p.id,s.id,1)} disabled={i===subs.length-1} style={{width:18,height:14,borderRadius:4,border:"none",background:i===subs.length-1?"transparent":C.bdr,cursor:i===subs.length-1?"default":"pointer",color:i===subs.length-1?C.t3:C.t2,fontSize:9,padding:0,fontFamily:"inherit",lineHeight:1,opacity:i===subs.length-1?0.3:1}}>▼</button>
+                </div>
+                <div style={{fontSize:10,color:isCur?C.amb:C.t3,fontWeight:700,width:16,textAlign:"center"}}>{i+1}</div>
+                <button onClick={()=>tglSub(p.id,s.id)} style={{width:20,height:20,borderRadius:6,flexShrink:0,border:s.done?"none":"2px solid "+(isCur?C.amb:C.bdr),background:s.done?C.amb:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:11}}>{s.done&&"✓"}</button>
+                <div style={{flex:1,fontSize:12,color:C.txt,textDecoration:s.done?"line-through":"none",opacity:s.done?0.6:1,fontWeight:isCur?600:400}}>{s.text}{s.due&&<span style={{fontSize:10,color:C.t3,marginLeft:6}}>· {fmt(s.due)}</span>}</div>
+                {!s.done&&<button onClick={()=>togglePinSub(p.id,s.id,TD)} style={{width:22,height:22,borderRadius:6,border:"none",background:s.mustDoDate===TD?C.amb:"transparent",cursor:"pointer",color:s.mustDoDate===TD?"#fff":C.t3,fontSize:12,fontFamily:"inherit"}}>★</button>}
+                <button onClick={()=>delSub(p.id,s.id)} style={{width:20,height:20,borderRadius:6,border:"none",background:"transparent",cursor:"pointer",color:C.t3,fontSize:14,fontFamily:"inherit",padding:0}}>×</button>
+              </div>;})}
+              {addSub===p.id?<div style={{display:"flex",gap:6,marginTop:10,flexWrap:"wrap"}}>
+                <input value={subF.text} onChange={e=>setSubF(f=>({...f,text:e.target.value}))} onKeyDown={e=>e.key==="Enter"&&doAddSub(p.id)} placeholder="Step (e.g. Save deposit)" style={{...inp,flex:1,marginBottom:0,fontSize:12,minWidth:140}} autoFocus/>
+                <input type="date" value={subF.due} onChange={e=>setSubF(f=>({...f,due:e.target.value}))} style={{...inp,width:130,marginBottom:0,fontSize:12}}/>
+                <button onClick={()=>doAddSub(p.id)} style={btnP(C.amb)}>Add</button>
                 <button onClick={()=>setAddSub(null)} style={{padding:"8px 10px",borderRadius:8,border:"1px solid "+C.bdr,cursor:"pointer",background:"transparent",color:C.t2,fontSize:12}}>×</button>
-              </div>:<div style={{padding:"6px 16px 10px"}}><button onClick={()=>{setAddSub(p.id);setSubF({text:"",due:""});}} style={{fontSize:12,color:C.vio,fontWeight:600,background:"none",border:"none",cursor:"pointer",fontFamily:"inherit"}}>+ Add subtask</button></div>}
-            </div>
-          </>}
+              </div>:<button onClick={()=>{setAddSub(p.id);setSubF({text:"",due:""});}} style={{marginTop:10,fontSize:12,color:C.amb,fontWeight:600,background:"none",border:"none",cursor:"pointer",fontFamily:"inherit"}}>+ Add step</button>}
+            </div>}
+          </div>}
         </div>;
       })}
 
       {addP?<div style={{...card,padding:14}}>
-        <div style={{fontSize:14,fontWeight:700,color:C.txt,marginBottom:10}}>New project</div>
-        <input value={pf.title} onChange={e=>setPf(f=>({...f,title:e.target.value}))} placeholder="Project title" style={inp} autoFocus/>
+        <div style={{fontSize:14,fontWeight:700,color:C.txt,marginBottom:10}}>New project or goal</div>
+        <input value={pf.title} onChange={e=>setPf(f=>({...f,title:e.target.value}))} placeholder="Title (e.g. Buy 2 more properties / Renovate kitchen)" style={inp} autoFocus/>
         <input type="date" value={pf.deadline} onChange={e=>setPf(f=>({...f,deadline:e.target.value}))} style={inp}/>
         <input value={pf.notes} onChange={e=>setPf(f=>({...f,notes:e.target.value}))} placeholder="Notes (optional)" style={inp}/>
         <div style={{display:"flex",gap:8}}>
           <button onClick={doAddP} style={{...btnP(C.vio),flex:1,padding:12,fontSize:14}}>Create</button>
           <button onClick={()=>setAddP(false)} style={{padding:"12px 20px",borderRadius:10,border:"1px solid "+C.bdr,cursor:"pointer",background:"transparent",fontSize:13,color:C.t2}}>Cancel</button>
         </div>
-      </div>:<button onClick={()=>setAddP(true)} style={{width:"100%",padding:12,borderRadius:12,border:"2px dashed "+C.vio+"60",cursor:"pointer",background:"transparent",fontSize:13,fontWeight:600,color:C.vio,fontFamily:"inherit",marginBottom:16}}>+ New project</button>}
+      </div>:<button onClick={()=>setAddP(true)} style={{width:"100%",padding:12,borderRadius:12,border:"2px dashed "+C.vio+"60",cursor:"pointer",background:"transparent",fontSize:13,fontWeight:600,color:C.vio,fontFamily:"inherit",marginBottom:16}}>+ New project or goal</button>}
 
-      <div style={{fontSize:16,fontWeight:700,color:C.txt,marginTop:20,marginBottom:10}}>Goals</div>
-      {goals.map(g=>{const sm={"In progress":{bg:C.vioBg,c:C.vioTx},"Almost done":{bg:C.grnBg,c:C.grnTx},"On hold":{bg:C.ambBg,c:C.ambTx},"Done":{bg:C.grnBg,c:C.grnTx}};const sc=sm[g.status]||sm["In progress"];
-        return <div key={g.id} style={{...card,opacity:g.status==="Done"?0.5:1}}>
-          <div style={{padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-            <div style={{flex:1}}><div style={{fontSize:14,fontWeight:600,color:C.txt,textDecoration:g.status==="Done"?"line-through":"none"}}>{g.text}</div>{g.deadline&&<div style={{fontSize:11,color:C.t2,marginTop:3}}>Deadline: {fmt(g.deadline)}</div>}</div>
-            <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
-              <select value={g.status} onChange={e=>updG(g.id,{status:e.target.value})} style={{padding:"4px 8px",borderRadius:8,border:"1px solid "+sc.c+"40",background:sc.bg,color:sc.c,fontSize:11,fontWeight:600,outline:"none",cursor:"pointer"}}><option value="In progress">In progress</option><option value="Almost done">Almost done</option><option value="On hold">On hold</option><option value="Done">Done</option></select>
-              <button onClick={()=>delG(g.id)} style={{width:24,height:24,borderRadius:8,border:"none",background:C.redBg,cursor:"pointer",color:C.redTx,display:"flex",alignItems:"center",justifyContent:"center"}}>{Ico.trash}</button>
-            </div>
-          </div>
-        </div>;
-      })}
-      {addG?<div style={{...card,padding:14}}>
-        <input value={gf.text} onChange={e=>setGf(f=>({...f,text:e.target.value}))} placeholder="Goal (e.g. Buy 2 more properties)" style={inp} autoFocus/>
-        <input type="date" value={gf.deadline} onChange={e=>setGf(f=>({...f,deadline:e.target.value}))} style={inp}/>
-        <div style={{display:"flex",gap:8}}>
-          <button onClick={doAddG} style={{...btnP(C.grn),flex:1,padding:10}}>Add goal</button>
-          <button onClick={()=>setAddG(false)} style={{padding:"10px 14px",borderRadius:10,border:"1px solid "+C.bdr,cursor:"pointer",background:"transparent",color:C.t2,fontSize:13}}>Cancel</button>
-        </div>
-      </div>:<button onClick={()=>setAddG(true)} style={{width:"100%",padding:12,borderRadius:12,border:"2px dashed "+C.bdr,cursor:"pointer",background:"transparent",fontSize:13,fontWeight:600,color:C.t2,fontFamily:"inherit"}}>+ New goal</button>}
     </div>}
 
     {/* ══════ ACTIVITY ══════ */}
@@ -993,6 +1185,16 @@ function HQ(){
           <div style={{fontSize:11,color:C.t2,lineHeight:1.5,maxWidth:280,margin:"0 auto"}}>Target: {latestWeight}kg × 1.8g = {proteinTarget}g. Auto-recalculates on new weigh-in.</div>
         </div>
       </div>
+
+      {/* MEAL STACKS — multi-item one-tap */}
+      {(mealStacks||[]).length>0&&<div style={card}>
+        <div style={cHead}><div style={{fontSize:15,fontWeight:700,color:C.txt}}>Meal stacks</div><span style={{fontSize:11,color:C.t3}}>One tap = full meal</span></div>
+        <div style={{padding:"10px 12px",display:"flex",flexWrap:"wrap",gap:6}}>
+          {mealStacks.map(s=><button key={s.id} onClick={()=>applyStack(s)} style={{padding:"8px 12px",borderRadius:10,border:"1px solid "+C.vio+"40",cursor:"pointer",background:C.vioBg,fontSize:12,fontWeight:600,color:C.vioTx,fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}} title={s.items.map(it=>it.name+" "+it.protein+"g").join(", ")}>
+            🍽 {s.name}<span style={{fontSize:10,color:"#fff",background:C.vio,padding:"2px 6px",borderRadius:6,fontWeight:700}}>+{stackTotal(s)}g</span>
+          </button>)}
+        </div>
+      </div>}
 
       {/* QUICK ADDS */}
       <div style={card}>
