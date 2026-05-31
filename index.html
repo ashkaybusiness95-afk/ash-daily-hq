@@ -198,8 +198,12 @@ function HQ(){
   const[parseTaskLoad,setParseTaskLoad]=useState(false);const[parseTaskErr,setParseTaskErr]=useState("");
   const[showStackMgr,setShowStackMgr]=useState(false);const[newStackN,setNewStackN]=useState("");const[newStackItems,setNewStackItems]=useState([{name:"",protein:""}]);
   const[showOwedAdd,setShowOwedAdd]=useState(false);const[owedF,setOwedF]=useState({who:"",amount:"",what:""});const[showOwedPaid,setShowOwedPaid]=useState(false);
+  // Chat B day planner
+  const[pcDate,setPcDate]=useState(()=>now.getHours()>=18?dateShift(TD,1):TD);
+  const[dumpOpen,setDumpOpen]=useState(false);const[dumpText,setDumpText]=useState("");const[dumpLoad,setDumpLoad]=useState(false);const[dumpErr,setDumpErr]=useState("");const[dumpDraft,setDumpDraft]=useState(null);
+  const[pbF,setPbF]=useState({time:"",label:""});
 
-  const SEED={tasks:[],projects:[],goals:[],acts:{},actNotes:{},notes:{},body:[],meals:[],steps:{},reflections:{},foods:DEFAULT_FOODS,customActs:DEFAULT_ACTS.map(a=>a.name),plans:{},weeklyReviews:{},restDays:{},mealStacks:[],owed:[]};
+  const SEED={tasks:[],projects:[],goals:[],acts:{},actNotes:{},notes:{},body:[],meals:[],steps:{},reflections:{},foods:DEFAULT_FOODS,customActs:DEFAULT_ACTS.map(a=>a.name),plans:{},weeklyReviews:{},restDays:{},mealStacks:[],owed:[],dayPlans:{}};
 
   useEffect(()=>{
     DOC.get().then(doc=>{
@@ -207,7 +211,7 @@ function HQ(){
       if(!d){try{const b=localStorage.getItem(BK);if(b)d=JSON.parse(b);}catch{}}
       if(!d)d=JSON.parse(JSON.stringify(SEED));
       ["tasks","projects","goals","body","meals","mealStacks","owed"].forEach(k=>{if(!d[k])d[k]=[];});
-      ["acts","actNotes","notes","steps","reflections","plans","weeklyReviews","restDays"].forEach(k=>{if(!d[k])d[k]={};});
+      ["acts","actNotes","notes","steps","reflections","plans","weeklyReviews","restDays","dayPlans"].forEach(k=>{if(!d[k])d[k]={};});
       if(!d.foods||!d.foods.length)d.foods=DEFAULT_FOODS;
       if(!d.customActs||!d.customActs.length)d.customActs=DEFAULT_ACTS.map(a=>a.name);
       setData(d);
@@ -258,6 +262,11 @@ function HQ(){
       setData(function(p){return Object.assign({},p,{projects:(p.projects||[]).concat(migrated),goals:[]});});
     }
 
+    // ONE-TIME BACKFILL: lastTouched from created/due (B8 stale filter)
+    if(data.tasks.some(t=>!t.lastTouched)){
+      setData(p=>Object.assign({},p,{tasks:(p.tasks||[]).map(t=>t.lastTouched?t:Object.assign({},t,{lastTouched:t.created||t.due||TD}))}));
+    }
+
     // Restore saved weekly review for current week
     if(data.weeklyReviews&&data.weeklyReviews[thisWeekStart]&&data.weeklyReviews[thisWeekStart].text)setWkAi(data.weeklyReviews[thisWeekStart].text);
   },[data]);
@@ -265,7 +274,7 @@ function HQ(){
   if(!data)return <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh"}}><div style={{color:C.t2}}>Loading...</div></div>;
 
   const upd=fn=>setData(p=>({...p,...fn(p)}));
-  const{tasks,projects,goals,acts,actNotes,notes,body,customActs,steps,reflections,foods,meals,plans,weeklyReviews,restDays,mealStacks,owed}=data;
+  const{tasks,projects,goals,acts,actNotes,notes,body,customActs,steps,reflections,foods,meals,plans,weeklyReviews,restDays,mealStacks,owed,dayPlans}=data;
 
   // ─── ACTIVITY ───
   const actStyle=name=>{const d=DEFAULT_ACTS.find(a=>a.name===name);return d||{name,color:C.grn,bg:C.grnBg,tx:C.grnTx};};
@@ -343,17 +352,18 @@ function HQ(){
   const homeProjSubs=projects.filter(p=>p.status==="active").map(p=>{const n=(p.subtasks||[]).find(s=>!s.done);return n?{...n,_pid:p.id,_pt:p.title,_isSub:true,_d:(p.subtasks||[]).filter(s=>s.done).length,_t:(p.subtasks||[]).length}:null;}).filter(Boolean);
   const homeUnified=[...overdueTs,...todayTs,...homeProjSubs];
 
-  const doAddT=()=>{if(!tf.text.trim())return;upd(d=>({tasks:[{id:uid(),text:tf.text.trim(),cat:tf.cat,due:tf.due,pri:tf.pri,done:false,created:TD,recur:tf.recur||""},...d.tasks]}));setTf({text:"",cat:"property",due:TD,pri:"normal",recur:""});setAddT(false);};
+  const doAddT=()=>{if(!tf.text.trim())return;upd(d=>({tasks:[{id:uid(),text:tf.text.trim(),cat:tf.cat,due:tf.due,pri:tf.pri,done:false,created:TD,recur:tf.recur||"",lastTouched:TD},...d.tasks]}));setTf({text:"",cat:"property",due:TD,pri:"normal",recur:""});setAddT(false);};
+  const carryToTmr=id=>upd(d=>({tasks:d.tasks.map(x=>x.id===id?{...x,due:TMR,lastTouched:TD}:x)}));
   const tglDone=id=>{upd(d=>{
     const t=d.tasks.find(x=>x.id===id);const isCompleting=t&&!t.done;
-    let newTasks=d.tasks.map(x=>x.id===id?{...x,done:!x.done}:x);
+    let newTasks=d.tasks.map(x=>x.id===id?{...x,done:!x.done,lastTouched:TD}:x);
     if(isCompleting&&t.recur){let nd=nextRecur(t.due,t.recur);while(nd<TD)nd=nextRecur(nd,t.recur);
       const exists=newTasks.some(x=>x.text===t.text&&x.cat===t.cat&&x.due===nd&&!x.done);
       if(!exists)newTasks=newTasks.concat([{id:uid(),text:t.text,cat:t.cat,due:nd,pri:t.pri,done:false,created:TD,recur:t.recur}]);}
     return{tasks:newTasks};
   });};
   const delT=id=>upd(d=>({tasks:d.tasks.filter(t=>t.id!==id)}));
-  const saveEdit=id=>{if(!editF.text?.trim())return;upd(d=>({tasks:d.tasks.map(t=>t.id===id?{...t,...editF}:t)}));setEditId(null);};
+  const saveEdit=id=>{if(!editF.text?.trim())return;upd(d=>({tasks:d.tasks.map(t=>t.id===id?{...t,...editF,lastTouched:TD}:t)}));setEditId(null);};
   const gc=k=>CATS.find(c=>c.key===k)||CATS[0];
 
   // ─── PIN / MUST-DO ───
@@ -374,6 +384,51 @@ function HQ(){
   const planTmr=plans[TMR];
   const saveTmrPlan=()=>{upd(d=>({plans:{...d.plans,[TMR]:{acts:planDraft.acts,note:planDraft.note||""}}}));setShowPlanTmr(false);};
   const delTmrPlan=()=>upd(d=>{const n={...d.plans};delete n[TMR];return{plans:n};});
+
+  // ─── DAY PLANNER (Chat B) ───
+  const toMin=t=>{const p=(t||"").split(":");return (parseInt(p[0])||0)*60+(parseInt(p[1])||0);};
+  const isPcToday=pcDate===TD;
+  const pcBlocks=((dayPlans||{})[pcDate]||[]).slice().sort((a,b)=>a.time.localeCompare(b.time));
+  const nowMin=now.getHours()*60+now.getMinutes();
+  let curId=null,nextBlk=null;
+  if(isPcToday){pcBlocks.forEach(b=>{if(toMin(b.time)<=nowMin)curId=b.id;});nextBlk=pcBlocks.find(b=>toMin(b.time)>nowMin)||null;}
+  const curBlk=pcBlocks.find(b=>b.id===curId)||null;
+  const parseDayPlan=()=>{
+    if(!apiKey){setDumpErr("Add API key (⚙) first.");return;}
+    if(!dumpText.trim())return;
+    setDumpLoad(true);setDumpErr("");
+    callAI(apiKey,
+      "You convert a free-text day brain-dump into a structured timed schedule. Return ONLY valid JSON: {\"blocks\":[{\"time\":\"HH:MM\",\"label\":\"short action\",\"act\":\"\"}]}. Rules: (1) 24-hour HH:MM times. (2) If an item has no explicit time, infer a sensible time in sequence after the previous one. (3) Labels short, action-first, capitalised. (4) act = one of EXACTLY these training names if the block clearly is that training session, else empty string: "+JSON.stringify(customActs)+". (5) Sort ascending by time. No markdown, only JSON.",
+      dumpText,
+      txt=>{
+        setDumpLoad(false);
+        try{
+          const clean=txt.replace(/```json|```/g,"").trim();
+          const obj=JSON.parse(clean);
+          if(!obj.blocks||!Array.isArray(obj.blocks))throw new Error("bad");
+          const blocks=obj.blocks.filter(b=>b.time&&b.label).map(b=>({time:b.time,label:String(b.label),act:customActs.includes(b.act)?b.act:""})).sort((a,b)=>a.time.localeCompare(b.time));
+          if(!blocks.length)throw new Error("bad");
+          setDumpDraft(blocks);
+        }catch(e){setDumpErr("Couldn't parse. Add rough times and try again.");}
+      });
+  };
+  const saveDayPlan=()=>{
+    if(!dumpDraft||!dumpDraft.length)return;
+    if(((dayPlans||{})[pcDate]||[]).length>0&&!confirm("Replace the existing plan for this day?"))return;
+    const blocks=dumpDraft.map(b=>({id:uid(),time:b.time,label:b.label,act:b.act||"",done:false}));
+    upd(d=>({dayPlans:{...(d.dayPlans||{}),[pcDate]:blocks}}));
+    setDumpDraft(null);setDumpText("");setDumpOpen(false);
+  };
+  const addBlock=()=>{if(!pbF.time||!pbF.label.trim())return;upd(d=>({dayPlans:{...(d.dayPlans||{}),[pcDate]:[...((d.dayPlans||{})[pcDate]||[]),{id:uid(),time:pbF.time,label:pbF.label.trim(),act:"",done:false}]}}));setPbF({time:"",label:""});};
+  const toggleBlock=(date,id)=>upd(d=>{
+    const arr=(d.dayPlans||{})[date]||[];let actToLog=null;
+    const narr=arr.map(b=>{if(b.id!==id)return b;if(!b.done&&b.act)actToLog=b.act;return{...b,done:!b.done};});
+    const out={dayPlans:{...(d.dayPlans||{}),[date]:narr}};
+    if(actToLog&&customActs.includes(actToLog)&&!d.acts[actToLog+"-"+date])out.acts={...d.acts,[actToLog+"-"+date]:true};
+    return out;
+  });
+  const delBlock=(date,id)=>upd(d=>({dayPlans:{...(d.dayPlans||{}),[date]:((d.dayPlans||{})[date]||[]).filter(b=>b.id!==id)}}));
+  const clearDayPlan=()=>{if(!confirm("Clear this day's plan?"))return;upd(d=>{const n={...(d.dayPlans||{})};delete n[pcDate];return{dayPlans:n};});};
 
   // ─── FOODS MGR ───
   const addFood=()=>{if(!newFoodN.trim()||!newFoodP)return;upd(d=>({foods:[...(d.foods||[]),{name:newFoodN.trim(),protein:parseInt(newFoodP)||0}]}));setNewFoodN("");setNewFoodP("");};
@@ -429,7 +484,8 @@ function HQ(){
   const subtasksAsT=[];projects.forEach(p=>{if(p.status==="done"||p.status==="on-hold")return;let foundCur=false;(p.subtasks||[]).forEach(st=>{const isCur=!st.done&&!foundCur;if(isCur)foundCur=true;subtasksAsT.push({id:"st-"+st.id,_origId:st.id,_pid:p.id,_pt:p.title,_isSub:true,_isCurrent:isCur,text:st.text,due:st.due||"",done:!!st.done,cat:"projects",pri:"normal",mustDoDate:st.mustDoDate||null});});});
   const goalStepsAsT=[];goals.forEach(g=>{(g.steps||[]).forEach(s=>{goalStepsAsT.push({id:"gs-"+s.id,_origId:s.id,_gid:g.id,_gt:g.text,_isGoalStep:true,text:s.text,due:s.due||"",done:!!s.done,cat:"goals",pri:"normal",mustDoDate:s.mustDoDate||null});});});
   const allTasksUnified=[...tasks,...subtasksAsT,...goalStepsAsT];
-  const filtT=allTasksUnified.filter(t=>{if(vm==="today")return((t.due&&(t.due===TD||t.due<TD))||(!t.due&&t.mustDoDate===TD)||t._isCurrent)&&!t.done;if(vm==="upcoming")return t.due&&t.due>TD&&!t.done;if(vm==="overdue")return t.due&&t.due<TD&&!t.done;if(vm==="done")return t.done;return !t.done;}).filter(t=>flt==="all"||t.cat===flt);
+  const filtT=allTasksUnified.filter(t=>{if(vm==="today")return((t.due&&(t.due===TD||t.due<TD))||(!t.due&&t.mustDoDate===TD)||t._isCurrent)&&!t.done;if(vm==="upcoming")return t.due&&t.due>TD&&!t.done;if(vm==="overdue")return t.due&&t.due<TD&&!t.done;if(vm==="stale")return !t.done&&!t._isSub&&!t._isGoalStep&&(t.lastTouched||t.created||t.due||TD)<=dateShift(TD,-14);if(vm==="done")return t.done;return !t.done;}).filter(t=>flt==="all"||t.cat===flt);
+  const staleC=tasks.filter(t=>!t.done&&(t.lastTouched||t.created||t.due||TD)<=dateShift(TD,-14)).length;
 
   // ─── PROJECTS ───
   const doAddP=()=>{if(!pf.title.trim())return;upd(d=>({projects:[...d.projects,{id:uid(),title:pf.title.trim(),deadline:pf.deadline,notes:pf.notes,status:"active",subtasks:[],created:TD}]}));setPf({title:"",deadline:"",notes:""});setAddP(false);};
@@ -516,6 +572,18 @@ function HQ(){
   const rolling7=(()=>{let done=0,poss=0;for(let i=0;i<7;i++){const d=dateShift(TD,-i);if(restDays[d])continue;done+=customActs.filter(a=>!!acts[a+"-"+d]).length;poss+=customActs.length;}return poss>0?Math.round((done/poss)*100):0;})();
   const prev7=(()=>{let done=0,poss=0;for(let i=7;i<14;i++){const d=dateShift(TD,-i);if(restDays[d])continue;done+=customActs.filter(a=>!!acts[a+"-"+d]).length;poss+=customActs.length;}return poss>0?Math.round((done/poss)*100):0;})();
   const rollDelta=rolling7-prev7;
+
+  // ─── S7 WEEKLY SNAPSHOT (rolling 7d vs prior 7d) ───
+  const wkStats=off=>{let protHit=0,trainDays=0,latestW=null;for(let i=off;i<off+7;i++){const d=dateShift(TD,-i);const prot=(meals||[]).filter(m=>m.date===d).reduce((a,m)=>a+(m.total||0),0);if(prot>=proteinTarget)protHit++;if(!restDays[d]&&customActs.some(a=>!!acts[a+"-"+d]))trainDays++;if(latestW===null){const bw=body.find(b=>b.date===d);if(bw)latestW=bw.weight;}}return{protPct:Math.round((protHit/7)*100),trainDays,latestW};};
+  const wkThis=wkStats(0),wkPrev=wkStats(7);
+  const wDelta=(wkThis.latestW!=null&&wkPrev.latestW!=null)?+(wkThis.latestW-wkPrev.latestW).toFixed(1):null;
+  const pDelta=wkThis.protPct-wkPrev.protPct;
+  const tDelta=wkThis.trainDays-wkPrev.trainDays;
+
+  // ─── A6 END-OF-DAY CHECK (9pm+, not rest day) ───
+  const a6NoTrain=todayDone.length===0;
+  const a6ProtShort=(proteinTarget-todayProtein)>=30;
+  const showA6=now.getHours()>=21&&!isRest(TD)&&(a6NoTrain||a6ProtShort);
 
   // ─── AI ───
   const genWeeklyAI=()=>{
@@ -660,6 +728,17 @@ function HQ(){
     {/* ══════ TODAY ══════ */}
     {tab==="today"&&<div className="fade-in">
 
+      {/* ═══ A6 END-OF-DAY NUDGE ═══ */}
+      {showA6&&<div style={{...card,background:C.ambBg,border:"1px solid "+C.amb+"40",padding:"12px 14px",display:"flex",alignItems:"center",gap:10}}>
+        <div style={{fontSize:20}}>🌙</div>
+        <div style={{flex:1}}>
+          <div style={{fontSize:11,fontWeight:700,color:C.ambTx,textTransform:"uppercase",letterSpacing:0.6}}>Before you wind down</div>
+          <div style={{fontSize:12,color:C.ambTx,marginTop:2}}>{a6NoTrain?"No training logged today — did you train? Log it before it slips.":"Protein's "+(proteinTarget-todayProtein)+"g short of "+proteinTarget+"g. Squeeze one in or log what you ate."}</div>
+        </div>
+        <button onClick={()=>setTab(a6NoTrain?"activity":"food")} style={{padding:"8px 12px",borderRadius:8,border:"none",background:C.amb,color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>Log now</button>
+      </div>}
+
+
       {/* ═══ HERO BLOCK — always visible ═══ */}
       <div style={{...card,borderTop:"4px solid "+C.grn,background:"linear-gradient(180deg,#fcfbf8 0%,"+C.card+" 100%)",marginBottom:14}}>
         <div style={{padding:"16px 16px 8px"}}>
@@ -704,6 +783,101 @@ function HQ(){
       </div>
 
       {/* ═══ END HERO ═══ */}
+
+      {/* ═══ DAY PLANNER ═══ */}
+      <div style={{...card,marginBottom:12}}>
+        <div style={{padding:"12px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:(pcBlocks.length>0||dumpOpen)?"1px solid "+C.bdr:"none"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <div style={{fontSize:13,fontWeight:600,color:C.txt}}>Day plan</div>
+            <div style={{display:"flex",background:C.bg,borderRadius:8,padding:2}}>
+              {[["Today",TD],["Tomorrow",TMR]].map(([lab,d])=><button key={d} onClick={()=>{setPcDate(d);setDumpOpen(false);setDumpDraft(null);}} style={{padding:"4px 10px",borderRadius:6,border:"none",cursor:"pointer",fontFamily:"inherit",fontSize:11,fontWeight:600,background:pcDate===d?C.card:"transparent",color:pcDate===d?C.txt:C.t2,boxShadow:pcDate===d?"0 1px 2px rgba(0,0,0,0.06)":"none"}}>{lab}</button>)}
+            </div>
+          </div>
+          <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            {pcBlocks.length>0&&<button onClick={clearDayPlan} style={{fontSize:11,color:C.t3,background:"none",border:"none",cursor:"pointer",fontFamily:"inherit"}}>Clear</button>}
+            <button onClick={()=>{setDumpOpen(o=>!o);setDumpDraft(null);setDumpErr("");}} style={btnP(pcBlocks.length>0?C.bluBg:C.blu,pcBlocks.length>0?C.bluTx:"#fff")}>{dumpOpen?"×":pcBlocks.length>0?"Edit":"+ Plan"}</button>
+          </div>
+        </div>
+
+        {/* NOW / NEXT */}
+        {!dumpOpen&&isPcToday&&pcBlocks.length>0&&<div style={{padding:"12px 14px",display:"flex",gap:10,borderBottom:"1px solid "+C.bdr}}>
+          <div style={{flex:1,padding:"10px 12px",borderRadius:10,background:curBlk?C.grnBg:C.bg,border:"1px solid "+(curBlk?C.grn+"40":C.bdr)}}>
+            <div style={{fontSize:9,fontWeight:700,color:curBlk?C.grnTx:C.t2,textTransform:"uppercase",letterSpacing:0.8}}>Now</div>
+            <div style={{fontSize:15,fontWeight:700,color:curBlk?C.grnTx:C.t3,marginTop:2,lineHeight:1.2}}>{curBlk?curBlk.label:"—"}</div>
+          </div>
+          <div style={{flex:1,padding:"10px 12px",borderRadius:10,background:C.bg,border:"1px solid "+C.bdr}}>
+            <div style={{fontSize:9,fontWeight:700,color:C.t2,textTransform:"uppercase",letterSpacing:0.8}}>Next{nextBlk?" · "+nextBlk.time:""}</div>
+            <div style={{fontSize:15,fontWeight:700,color:nextBlk?C.txt:C.t3,marginTop:2,lineHeight:1.2}}>{nextBlk?nextBlk.label:"Done for today"}</div>
+          </div>
+        </div>}
+
+        {/* TIMELINE */}
+        {!dumpOpen&&pcBlocks.length>0&&<div style={{padding:"8px 14px 14px"}}>
+          {pcBlocks.map((b,i)=>{const past=isPcToday&&toMin(b.time)<nowMin&&b.id!==curId;const cur=b.id===curId&&isPcToday;const st=b.act?actStyle(b.act):null;
+            return <div key={b.id} style={{display:"flex",gap:10,alignItems:"stretch",opacity:b.done?0.5:past?0.6:1}}>
+              <div style={{width:38,flexShrink:0,textAlign:"right",fontSize:11,fontWeight:600,color:cur?C.grn:C.t2,paddingTop:12}}>{b.time}</div>
+              <div style={{display:"flex",flexDirection:"column",alignItems:"center",flexShrink:0}}>
+                <div style={{width:11,height:11,borderRadius:99,marginTop:13,background:(b.done||cur)?C.grn:C.card,border:"2px solid "+((cur||b.done)?C.grn:C.bdr),flexShrink:0}}/>
+                {i<pcBlocks.length-1&&<div style={{width:2,flex:1,background:C.bdr,minHeight:14}}/>}
+              </div>
+              <div onClick={()=>toggleBlock(pcDate,b.id)} style={{flex:1,margin:"5px 0",padding:"8px 11px",borderRadius:10,cursor:"pointer",background:cur?C.grnBg:C.bg,border:"1px solid "+(cur?C.grn+"40":C.bdr),display:"flex",alignItems:"center",gap:8}}>
+                <div style={{width:18,height:18,borderRadius:6,flexShrink:0,border:"2px solid "+(b.done||cur?C.grn:C.t3),background:b.done?C.grn:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff"}}>{b.done&&Ico.check}</div>
+                <div style={{flex:1,fontSize:13,fontWeight:cur?600:500,color:C.txt,textDecoration:b.done?"line-through":"none"}}>{b.label}</div>
+                {st&&<span style={{...pl(st.bg,st.tx),fontSize:9}}>{b.act}</span>}
+                <button onClick={e=>{e.stopPropagation();delBlock(pcDate,b.id);}} style={{width:22,height:22,borderRadius:6,border:"none",background:"transparent",cursor:"pointer",color:C.t3,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{Ico.trash}</button>
+              </div>
+            </div>;
+          })}
+          <div style={{display:"flex",gap:6,marginTop:10,paddingLeft:48}}>
+            <input type="time" value={pbF.time} onChange={e=>setPbF(f=>({...f,time:e.target.value}))} style={{...inp,width:118,marginBottom:0,fontSize:12,padding:"7px 8px"}}/>
+            <input value={pbF.label} onChange={e=>setPbF(f=>({...f,label:e.target.value}))} onKeyDown={e=>e.key==="Enter"&&addBlock()} placeholder="Add a block" style={{...inp,flex:1,marginBottom:0,fontSize:12,padding:"7px 10px"}}/>
+            <button onClick={addBlock} style={{...btnP(C.grn),padding:"7px 13px",fontSize:14}}>+</button>
+          </div>
+        </div>}
+
+        {/* EMPTY STATE */}
+        {!dumpOpen&&pcBlocks.length===0&&<div style={{padding:"18px 16px",textAlign:"center"}}>
+          <div style={{fontSize:12,color:C.t2,marginBottom:10,lineHeight:1.5}}>No plan for {isPcToday?"today":"tomorrow"} yet. Brain-dump your day — rough times, any order — and AI lays it on a timeline.</div>
+          <button onClick={()=>{setDumpOpen(true);setDumpErr("");}} style={{...btnP(C.blu),padding:"10px 18px",fontSize:13}}>Brain-dump the day</button>
+        </div>}
+
+        {/* BRAIN-DUMP EDITOR */}
+        {dumpOpen&&<div style={{padding:"12px 14px"}}>
+          <textarea value={dumpText} onChange={e=>setDumpText(e.target.value)} rows={4} placeholder="e.g. wake 7am, read till 8, clean house, 10 tidy garden, lunch 12, then walk, gym 6pm" style={{...inp,fontSize:13,resize:"vertical",lineHeight:1.5}}/>
+          <button onClick={parseDayPlan} disabled={dumpLoad||!dumpText.trim()} style={{...btnP(dumpLoad?C.bdr:C.blu,dumpLoad?C.t3:"#fff"),width:"100%",padding:11,fontSize:13}}>{dumpLoad?"Structuring…":"🤖 Structure with AI"}</button>
+          {dumpErr&&<div style={{fontSize:11,color:C.red,marginTop:8}}>{dumpErr}</div>}
+          {!apiKey&&<div style={{fontSize:11,color:C.t3,marginTop:8}}>Needs API key — add via ⚙ in header.</div>}
+          {dumpDraft&&<div style={{marginTop:12}}>
+            <div style={{fontSize:10,fontWeight:700,color:C.t2,textTransform:"uppercase",letterSpacing:0.6,marginBottom:6}}>Preview — {dumpDraft.length} blocks</div>
+            {dumpDraft.map((b,i)=><div key={i} style={{display:"flex",gap:10,alignItems:"center",padding:"6px 0",borderBottom:i<dumpDraft.length-1?"1px solid "+C.bdr:"none"}}>
+              <span style={{width:42,fontSize:12,fontWeight:600,color:C.blu}}>{b.time}</span>
+              <span style={{flex:1,fontSize:13,color:C.txt}}>{b.label}</span>
+              {b.act&&<span style={{...pl(C.coralBg,C.coralTx),fontSize:9}}>{b.act}</span>}
+            </div>)}
+            <button onClick={saveDayPlan} style={{...btnP(C.grn),width:"100%",padding:11,fontSize:13,marginTop:10}}>{pcBlocks.length>0?"Replace day with this plan":"Save plan"}</button>
+          </div>}
+        </div>}
+      </div>
+
+
+      {/* ═══ S7 WEEKLY SNAPSHOT ═══ */}
+      <div style={{...card,marginBottom:12}}>
+        <div style={{padding:"10px 14px 6px",display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+          <div style={{fontSize:11,fontWeight:700,color:C.t2,textTransform:"uppercase",letterSpacing:0.8}}>This week vs last</div>
+          <span style={{fontSize:9,color:C.t3}}>rolling 7 days</span>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:1,background:C.bdr,borderTop:"1px solid "+C.bdr}}>
+          {[{lab:"Weight",val:wkThis.latestW!=null?wkThis.latestW+"kg":"—",d:wDelta,good:wDelta!=null&&wDelta<0,bad:wDelta!=null&&wDelta>0,suf:"kg",show:wDelta!=null&&wDelta!==0},
+            {lab:"Protein hit",val:wkThis.protPct+"%",d:pDelta,good:pDelta>0,bad:pDelta<0,suf:"pt",show:pDelta!==0},
+            {lab:"Trained",val:wkThis.trainDays+"d",d:tDelta,good:tDelta>0,bad:tDelta<0,suf:"d",show:tDelta!==0}
+          ].map((m,i)=><div key={i} style={{background:C.card,padding:"10px 8px",textAlign:"center"}}>
+            <div style={{fontSize:9,fontWeight:700,color:C.t2,textTransform:"uppercase",letterSpacing:0.4}}>{m.lab}</div>
+            <div style={{fontSize:17,fontWeight:700,color:C.txt,marginTop:3}}>{m.val}</div>
+            <div style={{fontSize:10,fontWeight:600,marginTop:1,color:m.show?(m.good?C.grnTx:m.bad?C.red:C.t3):C.t3}}>{m.show?(m.d>0?"↑ "+Math.abs(m.d)+m.suf:"↓ "+Math.abs(m.d)+m.suf):"= last wk"}</div>
+          </div>)}
+        </div>
+      </div>
+
 
       {/* ═══ QUICK-LOG BAR — one-tap from home ═══ */}
       <div style={{...card,background:"#fafaf7"}}>
@@ -828,12 +1002,14 @@ function HQ(){
     {/* ══════ TASKS ══════ */}
     {tab==="tasks"&&<div className="fade-in">
       <div style={{display:"flex",gap:6,marginBottom:10,overflowX:"auto"}}>
-        {["today","upcoming","overdue","all","done"].map(v=><button key={v} onClick={()=>setVm(v)} style={{padding:"7px 14px",borderRadius:10,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit",textTransform:"capitalize",background:vm===v?C.slate:C.card,color:vm===v?"#fff":C.t2,whiteSpace:"nowrap"}}>{v}{v==="overdue"&&overdueC>0?" ("+overdueC+")":""}</button>)}
+        {["today","upcoming","overdue","stale","all","done"].map(v=><button key={v} onClick={()=>setVm(v)} style={{padding:"7px 14px",borderRadius:10,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit",textTransform:"capitalize",background:vm===v?(v==="stale"?C.amb:C.slate):C.card,color:vm===v?"#fff":(v==="stale"&&staleC>0?C.ambTx:C.t2),whiteSpace:"nowrap"}}>{v}{v==="overdue"&&overdueC>0?" ("+overdueC+")":""}{v==="stale"&&staleC>0?" ("+staleC+")":""}</button>)}
       </div>
       <div style={{display:"flex",gap:5,marginBottom:14,overflowX:"auto"}}>
         <button onClick={()=>setFlt("all")} style={{padding:"5px 12px",borderRadius:99,border:flt==="all"?"2px solid "+C.slate:"1px solid "+C.bdr,cursor:"pointer",background:"transparent",fontSize:11,fontWeight:600,color:flt==="all"?C.txt:C.t2,fontFamily:"inherit"}}>All</button>
         {CATS.map(c=><button key={c.key} onClick={()=>setFlt(c.key)} style={{padding:"5px 12px",borderRadius:99,cursor:"pointer",fontSize:11,fontWeight:600,fontFamily:"inherit",border:flt===c.key?"2px solid "+c.c:"1px solid "+C.bdr,background:flt===c.key?c.bg:"transparent",color:flt===c.key?c.c:C.t2,whiteSpace:"nowrap"}}>{c.label}</button>)}
       </div>
+
+      {vm==="stale"&&<div style={{padding:"8px 12px",borderRadius:10,background:C.ambBg,marginBottom:10,fontSize:11,color:C.ambTx,lineHeight:1.5}}>Undone and untouched for 14+ days. Decide: do it, carry it forward, or bin it. Nothing's deleted automatically.</div>}
 
       {filtT.length===0&&<div style={{...card,padding:"32px 16px",textAlign:"center"}}>
         <div style={{fontSize:28,opacity:0.3,marginBottom:6}}>✓</div>
@@ -867,6 +1043,7 @@ function HQ(){
             </div>
             <div style={{display:"flex",gap:4,flexShrink:0}}>
               {!isLinked&&<button onClick={()=>togglePin(t.id)} style={{width:26,height:26,borderRadius:8,border:"none",background:t.mustDoDate===TD?C.amb:C.bdr,cursor:"pointer",color:t.mustDoDate===TD?"#fff":C.t2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}} title="Must-do today">★</button>}
+              {!isLinked&&od&&<button onClick={()=>carryToTmr(t.id)} style={{padding:"4px 9px",borderRadius:8,border:"1px solid "+C.blu+"40",background:C.bluBg,cursor:"pointer",color:C.bluTx,fontSize:10,fontWeight:600,fontFamily:"inherit",whiteSpace:"nowrap"}} title="Move to tomorrow">→ tmrw</button>}
               {!isLinked&&<a href={calUrl(t.text,t.due)} target="_blank" rel="noopener" style={{width:26,height:26,borderRadius:8,background:C.grnBg,color:C.grn,display:"flex",alignItems:"center",justifyContent:"center"}}>{Ico.cal}</a>}
               {!isLinked&&<button onClick={()=>{setEditId(t.id);setEditF({text:t.text,cat:t.cat,due:t.due,pri:t.pri,recur:t.recur||""});}} style={{width:26,height:26,borderRadius:8,border:"none",background:C.bdr,cursor:"pointer",color:C.t2,display:"flex",alignItems:"center",justifyContent:"center"}}>{Ico.edit}</button>}
               {isLinked&&<button onClick={()=>setTab("proj")} style={{padding:"4px 10px",borderRadius:8,border:"1px solid "+c.c+"40",background:c.bg,cursor:"pointer",color:c.tx,fontSize:10,fontWeight:600,fontFamily:"inherit"}}>Open</button>}
